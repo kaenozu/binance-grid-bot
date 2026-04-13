@@ -87,8 +87,12 @@ class Portfolio:
 
     def record_trade(
         self, side: str, price: float, quantity: float, order_id: int, grid_level: int
-    ):
-        """取引を記録"""
+    ) -> Optional[float]:
+        """取引を記録
+
+        Returns:
+            SELL時の利益、BUY時はNone
+        """
         trade = Trade(
             timestamp=datetime.now(),
             symbol=self.symbol,
@@ -103,6 +107,8 @@ class Portfolio:
         self.stats.total_trades += 1
         self.stats.last_update = datetime.now()
 
+        profit: Optional[float] = None
+
         if side == "SELL":
             buy_trade = self.find_matching_buy_trade(grid_level)
             if buy_trade:
@@ -112,7 +118,9 @@ class Portfolio:
                 trade.matched = True
                 self.stats.realized_profit += profit
                 self.stats.settled_trades += 1
-                self.stats.total_profit = self.stats.realized_profit + self.stats.unrealized_profit
+                self.stats.total_profit = (
+                    self.stats.realized_profit + self.stats.unrealized_profit
+                )
 
                 if profit > 0:
                     self.stats.winning_trades += 1
@@ -130,6 +138,7 @@ class Portfolio:
                 logger.info(f"取引記録: グリッド {grid_level}, 利益={profit:.2f}")
 
         logger.info(f"取引記録追加: {side} {quantity} @ {price}")
+        return profit
 
     def find_matching_buy_trade(self, grid_level: int) -> Optional[Trade]:
         """対応する未マッチの買い注文を最新順に探す
