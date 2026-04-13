@@ -21,10 +21,6 @@ from utils.logger import setup_logger
 
 logger = setup_logger("bot")
 
-STATUS_DISPLAY_INTERVAL = 60
-CHECK_INTERVAL = 10
-MAX_CONSECUTIVE_ERRORS = 5
-
 
 class GridBot:
     """グリッド取引ボット"""
@@ -74,7 +70,7 @@ class GridBot:
         try:
             while self.is_running:
                 self._tick()
-                time.sleep(CHECK_INTERVAL)
+                time.sleep(Settings.CHECK_INTERVAL)
         except KeyboardInterrupt:
             logger.info("KeyboardInterrupt 検出。ボット停止中...")
             self.stop()
@@ -86,7 +82,7 @@ class GridBot:
         """初期注文を配置"""
         logger.info("初期注文配置開始...")
         result = self.order_manager.place_grid_orders()
-        logger.info(f"初期注文配置完了: {result['placed']} 件")
+        logger.info(f"初期注文配置完了: {result.placed} 件")
 
     def _place_grid_orders_for_level(self, grid_level: int):
         """特定グリッドレベルの買い注文を配置（決済後）"""
@@ -96,78 +92,13 @@ class GridBot:
             )
             return
 
-        try:
-            symbol_info = self.client.get_symbol_info(self.strategy.symbol)
-            if not symbol_info:
-                return
-
-            grid = self.strategy.grids[grid_level]
-            grid.position_filled = False
-
-            quantity = self.strategy.get_order_quantity(
-                grid.buy_price, symbol_info["min_qty"], symbol_info["step_size"]
-            )
-
-            tick_size = symbol_info["tick_size"]
-            adjusted_price = round(grid.buy_price / tick_size) * tick_size
-
-            order = self.client.place_order(
-                symbol=self.strategy.symbol,
-                side="BUY",
-                quantity=quantity,
-                price=adjusted_price,
-            )
-
-            self.order_manager.register_order(
-                order_id=order["orderId"],
-                grid_level=grid_level,
-                side="BUY",
-                price=float(order["price"]),
-                quantity=float(order["origQty"]),
-                status=order["status"],
-            )
-
-            logger.info(f"グリッド {grid_level}: 買い再注文配置 @ {adjusted_price}")
-
-        except Exception as e:
-            logger.error(f"グリッド {grid_level} 再注文失敗: {e}")
+        self.order_manager.place_buy_order_for_grid(grid_level)
 
     def _place_sell_for_grid(self, grid_level: int, quantity: float):
         """特定グリッドレベルの売り注文を配置（買い約定後）"""
-        try:
-            symbol_info = self.client.get_symbol_info(self.strategy.symbol)
-            if not symbol_info:
-                return
+        self.order_manager.place_sell_order_for_grid(grid_level, quantity)
 
-            grid = self.strategy.grids[grid_level]
-            if not grid.sell_price:
-                return
-
-            tick_size = symbol_info["tick_size"]
-            adjusted_price = round(grid.sell_price / tick_size) * tick_size
-
-            order = self.client.place_order(
-                symbol=self.strategy.symbol,
-                side="SELL",
-                quantity=quantity,
-                price=adjusted_price,
-            )
-
-            self.order_manager.register_order(
-                order_id=order["orderId"],
-                grid_level=grid_level,
-                side="SELL",
-                price=float(order["price"]),
-                quantity=float(order["origQty"]),
-                status=order["status"],
-            )
-
-            logger.info(f"グリッド {grid_level}: 売り注文配置 @ {adjusted_price}")
-
-        except Exception as e:
-            logger.error(f"グリッド {grid_level} 売り注文失敗: {e}")
-
-    def _tick(self):
+    def _tick(self) -> None:
         """1 ティック処理"""
         try:
             self.current_price = self.client.get_symbol_price(Settings.TRADING_SYMBOL)
@@ -182,56 +113,52 @@ class GridBot:
 
             for fill in new_fills:
                 self.portfolio.record_trade(
-                    side=fill["side"],
-                    price=fill["price"],
-                    quantity=fill["quantity"],
-                    order_id=fill["order_id"],
-                    grid_level=fill["grid"],
+                    side=fill.side,
+                    price=fill.price,
+                    quantity=fill.quantity,
+                    order_id=fill.order_id,
+                    grid_level=fill.grid,
                 )
 
-                if fill["side"] == "BUY":
+                if fill.side == "BUY":
                     self.risk_manager.record_position_open()
-                elif fill["side"] == "SELL":
-                    buy_trade = self.portfolio._find_matching_buy_trade(fill["grid"])
+                    logger.info(f"グリッド {fill.grid}: 買い約定、売り注文配置")
+                    self._place_sell_for_grid(fill.grid, fill.quantity)
+                elif fill.side == "SELL":
+                    buy_trade = self.portfolio.find_matching_buy_trade(fill.grid)
                     profit = 0.0
                     if buy_trade:
-                        profit = (fill["price"] - buy_trade.price) * fill["quantity"]
+                        profit = (fill.price - buy_trade.price) * fill.quantity
                     self.risk_manager.record_position_close(profit)
-
-                if fill["side"] == "SELL":
-                    self.strategy.mark_position_closed(fill["grid"], fill["order_id"])
-                    logger.info(f"グリッド {fill['grid']}: 決済完了、再注文配置")
-                    self._place_grid_orders_for_level(fill["grid"])
-                elif fill["side"] == "BUY":
-                    logger.info(f"グリッド {fill['grid']}: 買い約定、売り注文配置")
-                    self._place_sell_for_grid(fill["grid"], fill["quantity"])
+                    logger.info(f"グリッド {fill.grid}: 決済完了、再注文配置")
+                    self._place_grid_orders_for_level(fill.grid)
 
             self.portfolio.calculate_unrealized_pnl(self.current_price)
             self.consecutive_errors = 0
 
             now = time.time()
-            if now - self._last_status_time >= STATUS_DISPLAY_INTERVAL:
+            if now - self._last_status_time >= Settings.STATUS_DISPLAY_INTERVAL:
                 self._display_status()
                 self._last_status_time = now
 
         except Exception as e:
             self.consecutive_errors += 1
             logger.error(
-                f"ティック処理エラー ({self.consecutive_errors}/{MAX_CONSECUTIVE_ERRORS}): {e}"
+                f"ティック処理エラー ({self.consecutive_errors}/{Settings.MAX_CONSECUTIVE_ERRORS}): {e}"
             )
             logger.error(f"スタックトレース:\n{traceback.format_exc()}")
 
-            if self.consecutive_errors >= MAX_CONSECUTIVE_ERRORS:
+            if self.consecutive_errors >= Settings.MAX_CONSECUTIVE_ERRORS:
                 logger.critical(
-                    f"連続エラーが{MAX_CONSECUTIVE_ERRORS}回に到達。ボットを停止します。"
+                    f"連続エラーが{Settings.MAX_CONSECUTIVE_ERRORS}回に到達。ボットを停止します。"
                 )
                 self.stop()
 
     def _display_status(self):
         """ステータスをCUIに表示"""
         stats = self.portfolio.get_stats()
-        grid_status = self.strategy.get_grid_status()
-        risk_status = self.risk_manager.get_risk_status()
+        grid_status = self.strategy.grid_status
+        risk_status = self.risk_manager.risk_status
 
         print("\n" + "=" * 70)
         print(

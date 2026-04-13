@@ -146,12 +146,12 @@ class TestPortfolio:
             order_id=12345,
             grid_level=5,
         )
-        buy_trade = portfolio._find_matching_buy_trade(5)
+        buy_trade = portfolio.find_matching_buy_trade(5)
         assert buy_trade is not None
         assert buy_trade.price == 50000.0
 
     def test_find_matching_buy_trade_not_found(self, portfolio):
-        assert portfolio._find_matching_buy_trade(99) is None
+        assert portfolio.find_matching_buy_trade(99) is None
 
     def test_matched_flag_prevents_double_matching(self, portfolio):
         portfolio.record_trade(
@@ -175,7 +175,7 @@ class TestPortfolio:
             order_id=102,
             grid_level=5,
         )
-        buy_trade = portfolio._find_matching_buy_trade(5)
+        buy_trade = portfolio.find_matching_buy_trade(5)
         assert buy_trade is not None
         assert buy_trade.price == 49000.0
 

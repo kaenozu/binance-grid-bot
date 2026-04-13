@@ -8,7 +8,30 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
+from config.settings import Settings
 from src.grid_strategy import GridStrategy
+
+
+@pytest.fixture(autouse=True)
+def restore_settings_after_test():
+    """各テスト後にSettingsの値を復元"""
+    # テスト前の値を保存
+    original = {
+        "BINANCE_API_KEY": Settings.BINANCE_API_KEY,
+        "BINANCE_API_SECRET": Settings.BINANCE_API_SECRET,
+        "USE_TESTNET": Settings.USE_TESTNET,
+        "TRADING_SYMBOL": Settings.TRADING_SYMBOL,
+        "GRID_COUNT": Settings.GRID_COUNT,
+        "LOWER_PRICE": Settings.LOWER_PRICE,
+        "UPPER_PRICE": Settings.UPPER_PRICE,
+        "INVESTMENT_AMOUNT": Settings.INVESTMENT_AMOUNT,
+        "STOP_LOSS_PERCENTAGE": Settings.STOP_LOSS_PERCENTAGE,
+        "MAX_POSITIONS": Settings.MAX_POSITIONS,
+    }
+    yield
+    # テスト後に値を復元
+    for key, value in original.items():
+        setattr(Settings, key, value)
 
 
 @pytest.fixture

@@ -81,7 +81,7 @@ class TestGridStrategy:
         assert grid_strategy.is_within_grid_range(56000.0) is False
 
     def test_grid_status(self, grid_strategy):
-        status = grid_strategy.get_grid_status()
+        status = grid_strategy.grid_status
         assert status["total_grids"] == 11
         assert status["filled_positions"] == 0
         assert status["empty_positions"] == 11

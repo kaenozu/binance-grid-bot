@@ -64,7 +64,7 @@ class TestRiskManager:
         assert risk_manager.total_trades == 2
 
     def test_risk_status(self, risk_manager):
-        status = risk_manager.get_risk_status()
+        status = risk_manager.risk_status
         assert status["stop_loss_price"] == 47500.0
         assert status["current_positions"] == 0
         assert status["max_positions"] == 5

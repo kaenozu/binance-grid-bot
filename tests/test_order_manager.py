@@ -58,7 +58,7 @@ class TestOrderManager:
             status="NEW",
         )
         assert 100 in order_manager.active_orders
-        assert order_manager.active_orders[100]["grid_level"] == 3
+        assert order_manager.active_orders[100].grid_level == 3
 
     def test_cleanup_filled_orders(self, order_manager):
         order_manager.register_order(100, 0, "BUY", 45000.0, 0.002, "FILLED")
@@ -79,7 +79,7 @@ class TestOrderManager:
 
         fills = order_manager.check_order_fills()
         assert len(fills) == 1
-        assert fills[0]["grid"] == 0
+        assert fills[0].grid == 0
         assert 100 not in order_manager.active_orders
 
     def test_cancel_all_orders(self, order_manager, mock_client):
@@ -98,11 +98,11 @@ class TestOrderManager:
 
     def test_place_grid_orders(self, order_manager, mock_client):
         result = order_manager.place_grid_orders()
-        assert result["placed"] > 0
-        assert len(result["errors"]) == 0
+        assert result.placed > 0
+        assert len(result.errors) == 0
 
     def test_place_grid_orders_no_symbol_info(self, order_manager, mock_client):
         mock_client.get_symbol_info.return_value = None
         result = order_manager.place_grid_orders()
-        assert result["placed"] == 0
-        assert len(result["errors"]) == 1
+        assert result.placed == 0
+        assert len(result.errors) == 1

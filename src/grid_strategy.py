@@ -14,8 +14,6 @@ from utils.logger import setup_logger
 
 logger = setup_logger("grid_strategy")
 
-AUTO_RANGE_FACTOR = 0.15
-
 
 @dataclass
 class GridLevel:
@@ -59,8 +57,9 @@ class GridStrategy:
             self.lower_price = lower_price
             self.upper_price = upper_price
         else:
-            self.lower_price = current_price * (1 - AUTO_RANGE_FACTOR)
-            self.upper_price = current_price * (1 + AUTO_RANGE_FACTOR)
+            range_factor = Settings.GRID_RANGE_FACTOR
+            self.lower_price = current_price * (1 - range_factor)
+            self.upper_price = current_price * (1 + range_factor)
             logger.info(
                 f"価格帯を自動設定: {self.lower_price:.2f} - {self.upper_price:.2f}"
             )
@@ -116,7 +115,11 @@ class GridStrategy:
 
         if min_qty > 0 and qty < min_qty:
             logger.warning(f"計算数量 {qty} が最小数量 {min_qty} を下回っています")
-            qty = min_qty
+            # step_sizeの倍数に丸めて最小数量以上にする
+            if step_size > 0:
+                qty = math.ceil(min_qty / step_size) * step_size
+            else:
+                qty = min_qty
 
         return qty
 
@@ -162,7 +165,8 @@ class GridStrategy:
         """実現利益を計算"""
         return (sell_price - buy_price) * quantity
 
-    def get_grid_status(self) -> dict:
+    @property
+    def grid_status(self) -> dict:
         """グリッドのステータスを返す"""
         filled = sum(1 for g in self.grids if g.position_filled)
         return {
