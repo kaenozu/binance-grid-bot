@@ -126,9 +126,11 @@ class OrderManager:
         for grid in self.strategy.get_active_sell_grids():
             try:
                 buy_order_id = grid.buy_order_id
+                # アクティブ注文に買い注文があれば実際の約定数量を使用、なければ再計算
                 if buy_order_id and buy_order_id in self._active_orders:
                     quantity = self._active_orders[buy_order_id].quantity
                 else:
+                    # 再起動後などで注文記録が丢失した場合のフォールバック
                     quantity = self.strategy.get_order_quantity(
                         grid.buy_price, symbol_info["min_qty"], symbol_info["step_size"]
                     )

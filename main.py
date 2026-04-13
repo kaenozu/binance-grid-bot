@@ -32,6 +32,10 @@ def main():
     # Testnet警告
     if not Settings.USE_TESTNET:
         print("警告: 本番モードで実行します")
+        # 非対話環境（パイプ、リダイレクト等）では自動中止
+        if not sys.stdin.isatty():
+            print("非対話環境のため本番モードを中止します")
+            sys.exit(1)
         confirm = input("続行しますか？ (yes/no): ").strip().lower()
         if confirm != "yes":
             print("中止しました")

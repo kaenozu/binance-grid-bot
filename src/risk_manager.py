@@ -64,7 +64,7 @@ class RiskManager:
             True: 損切り発動、False: 正常
         """
         if current_price <= self.stop_loss_price:
-            logger.warning(f"⚠️ 損切り発動! 現在価格: {current_price:.2f}, 損切り価格: {self.stop_loss_price:.2f}")
+            logger.warning(f"[STOP_LOSS] 損切り発動! 現在価格: {current_price:.2f}, 損切り価格: {self.stop_loss_price:.2f}")
             return True
         return False
     

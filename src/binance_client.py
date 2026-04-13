@@ -131,12 +131,14 @@ class BinanceClient:
                 raise last_error from e
 
             except requests.exceptions.HTTPError as e:
-                if 400 <= response.status_code < 500:
+                status_code = getattr(e.response, "status_code", 0) if e.response else 0
+                if 400 <= status_code < 500:
+                    response_text = e.response.text if e.response else ""
                     logger.error(
-                        f"クライアントエラー ({response.status_code}): {response.text}"
+                        f"クライアントエラー ({status_code}): {response_text}"
                     )
                     raise BinanceAPIError(
-                        f"クライアントエラー: {response.status_code} - {response.text}"
+                        f"クライアントエラー: {status_code} - {response_text}"
                     ) from e
                 raise BinanceAPIError(f"HTTP エラー: {e}") from e
 

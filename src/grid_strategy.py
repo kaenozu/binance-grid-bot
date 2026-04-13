@@ -115,7 +115,11 @@ class GridStrategy:
 
         if min_qty > 0 and qty < min_qty:
             logger.warning(f"計算数量 {qty} が最小数量 {min_qty} を下回っています")
-            qty = min_qty
+            # step_sizeの倍数に丸めて最小数量以上にする
+            if step_size > 0:
+                qty = math.ceil(min_qty / step_size) * step_size
+            else:
+                qty = min_qty
 
         return qty
 

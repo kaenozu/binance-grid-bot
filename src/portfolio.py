@@ -112,6 +112,7 @@ class Portfolio:
                 trade.matched = True
                 self.stats.realized_profit += profit
                 self.stats.settled_trades += 1
+                self.stats.total_profit = self.stats.realized_profit + self.stats.unrealized_profit
 
                 if profit > 0:
                     self.stats.winning_trades += 1
