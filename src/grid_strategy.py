@@ -88,9 +88,9 @@ class GridStrategy:
         self.grids = []
         spacing = self.grid_spacing
 
-        for i in range(self.grid_count + 1):
+        for i in range(self.grid_count):
             price = self.lower_price + (spacing * i)
-            sell_price = price + spacing if i < self.grid_count else None
+            sell_price = price + spacing if i < self.grid_count - 1 else None
             self.grids.append(
                 GridLevel(
                     level=i,
@@ -102,9 +102,20 @@ class GridStrategy:
         logger.info(f"グリッド計算完了: {len(self.grids)} レベル")
 
     def get_order_quantity(
-        self, price: float, min_qty: float = 0, step_size: float = 0
+        self,
+        price: float,
+        min_qty: float = 0,
+        step_size: float = 0,
+        min_notional: float = 0,
     ) -> float:
-        """注文数量を計算（投資額を均等分配）"""
+        """注文数量を計算（投資額を均等分配）
+
+        Args:
+            price: 注文価格
+            min_qty: 最小注文数量（LOT_SIZE filter）
+            step_size: 数量の刻み幅（LOT_SIZE filter）
+            min_notional: 最低注文金額（MIN_NOTIONAL filter）
+        """
         amount_per_grid = self.investment_amount / self.grid_count
         raw_qty = amount_per_grid / price
 
@@ -120,6 +131,19 @@ class GridStrategy:
                 qty = math.ceil(min_qty / step_size) * step_size
             else:
                 qty = min_qty
+
+        # min_notional チェック（Binanceの最低注文金額）
+        if min_notional > 0:
+            notional_value = qty * price
+            if notional_value < min_notional:
+                logger.warning(
+                    f"注文金額 {notional_value:.2f} USDT が最低注文金額 {min_notional:.2f} USDT を下回っています。"
+                    f"数量を調整します: {qty:.8f} -> {min_notional / price:.8f}"
+                )
+                adjusted_qty = min_notional / price
+                if step_size > 0:
+                    adjusted_qty = math.ceil(adjusted_qty / step_size) * step_size
+                qty = adjusted_qty
 
         return qty
 

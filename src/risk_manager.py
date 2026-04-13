@@ -38,8 +38,10 @@ class RiskManager:
         self.entry_price = entry_price
         self.halt_on_out_of_range = halt_on_out_of_range
 
-        # 損切り価格
-        self.stop_loss_price = entry_price * (1 - Settings.STOP_LOSS_PERCENTAGE / 100)
+        # 損切り価格: グリッド下限価格を基準にパーセンテージを下回る
+        self.stop_loss_price = self.strategy.lower_price * (
+            1 - Settings.STOP_LOSS_PERCENTAGE / 100
+        )
         
         # ポジション管理
         self.max_positions = Settings.MAX_POSITIONS

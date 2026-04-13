@@ -17,7 +17,7 @@ class TestGridStrategy:
         assert grid_strategy.lower_price == 45000.0
         assert grid_strategy.upper_price == 55000.0
         assert grid_strategy.grid_count == 10
-        assert len(grid_strategy.grids) == 11
+        assert len(grid_strategy.grids) == 10
 
     def test_grid_spacing(self, grid_strategy):
         expected = (55000.0 - 45000.0) / 10
@@ -25,12 +25,12 @@ class TestGridStrategy:
 
     def test_grid_prices(self, grid_strategy):
         assert grid_strategy.grids[0].buy_price == 45000.0
-        assert grid_strategy.grids[10].buy_price == 55000.0
+        assert grid_strategy.grids[9].buy_price == 54000.0
         assert grid_strategy.grids[1].buy_price == 46000.0
 
     def test_sell_prices(self, grid_strategy):
         assert grid_strategy.grids[0].sell_price == 46000.0
-        assert grid_strategy.grids[10].sell_price is None
+        assert grid_strategy.grids[9].sell_price is None
 
     def test_order_quantity(self, grid_strategy):
         qty = grid_strategy.get_order_quantity(
@@ -82,9 +82,9 @@ class TestGridStrategy:
 
     def test_grid_status(self, grid_strategy):
         status = grid_strategy.grid_status
-        assert status["total_grids"] == 11
+        assert status["total_grids"] == 10
         assert status["filled_positions"] == 0
-        assert status["empty_positions"] == 11
+        assert status["empty_positions"] == 10
         assert status["current_price"] == 50000.0
 
     def test_update_current_price(self, grid_strategy):
