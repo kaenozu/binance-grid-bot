@@ -107,6 +107,7 @@ class GridBot:
             if self.risk_manager.should_halt_trading(self.current_price):
                 logger.warning("リスク管理により取引を停止します")
                 self._emergency_stop()
+                self.consecutive_errors = 0  # 緊急停止時もエラーカウントをリセット
                 return
 
             new_fills = self.order_manager.check_order_fills()
