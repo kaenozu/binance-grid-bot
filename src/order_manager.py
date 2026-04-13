@@ -5,6 +5,7 @@
 関連ファイル: src/binance_client.py, src/grid_strategy.py, src/portfolio.py
 """
 
+import math
 from dataclasses import dataclass, field
 
 from src.binance_client import BinanceClient
@@ -108,7 +109,7 @@ class OrderManager:
                     continue
 
                 adjusted_price = self._adjust_price(
-                    grid.buy_price, symbol_info["tick_size"]
+                    grid.buy_price, symbol_info["tick_size"], side="BUY"
                 )
                 order = self.client.place_order(
                     symbol=self.strategy.symbol,
@@ -143,7 +144,7 @@ class OrderManager:
                     continue
 
                 adjusted_price = self._adjust_price(
-                    grid.sell_price, symbol_info["tick_size"]
+                    grid.sell_price, symbol_info["tick_size"], side="SELL"
                 )
                 order = self.client.place_order(
                     symbol=self.strategy.symbol,
@@ -257,7 +258,7 @@ class OrderManager:
                 return False
 
             adjusted_price = self._adjust_price(
-                grid.buy_price, symbol_info["tick_size"]
+                grid.buy_price, symbol_info["tick_size"], side="BUY"
             )
             order = self.client.place_order(
                 symbol=self.strategy.symbol,
@@ -287,7 +288,7 @@ class OrderManager:
                 return False
 
             adjusted_price = self._adjust_price(
-                grid.sell_price, symbol_info["tick_size"]
+                grid.sell_price, symbol_info["tick_size"], side="SELL"
             )
             order = self.client.place_order(
                 symbol=self.strategy.symbol,
@@ -323,9 +324,20 @@ class OrderManager:
     # ---- Private helpers ----
 
     @staticmethod
-    def _adjust_price(price: float, tick_size: float) -> float:
-        """価格をtick_sizeの倍数に調整"""
-        return round(price / tick_size) * tick_size
+    def _adjust_price(price: float, tick_size: float, side: str = "BUY") -> float:
+        """価格をtick_sizeの倍数に調整
+
+        Args:
+            price: 調整前価格
+            tick_size: 価格の刻み幅
+            side: 注文側（'BUY' or 'SELL'）
+                    BUY: tick_size以下に丸める（不利にならない）
+                    SELL: tick_size以上に丸める（不利にならない）
+        """
+        if side == "BUY":
+            return math.floor(price / tick_size) * tick_size
+        else:  # SELL
+            return math.ceil(price / tick_size) * tick_size
 
     def _register_and_handle(
         self, order: dict, grid_level: int, side: str, price: float, quantity: float

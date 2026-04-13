@@ -74,6 +74,7 @@ class BacktestEngine:
     # バックテスト用のデフォルト数量パラメータ
     DEFAULT_MIN_QTY = 0.00001
     DEFAULT_STEP_SIZE = 0.00001
+    DEFAULT_MIN_NOTIONAL = 5.0  # USDT
 
     def __init__(
         self,
@@ -83,6 +84,9 @@ class BacktestEngine:
         lower_price: Optional[float] = None,
         upper_price: Optional[float] = None,
         stop_loss_percent: float = 5.0,
+        min_qty: float = DEFAULT_MIN_QTY,
+        step_size: float = DEFAULT_STEP_SIZE,
+        min_notional: float = DEFAULT_MIN_NOTIONAL,
     ):
         """
         Args:
@@ -92,6 +96,9 @@ class BacktestEngine:
             lower_price: グリッド下限（Noneで自動）
             upper_price: グリッド上限（Noneで自動）
             stop_loss_percent: 損切り割合（%）
+            min_qty: 最小注文数量（LOT_SIZE filter）
+            step_size: 数量の刻み幅（LOT_SIZE filter）
+            min_notional: 最低注文金額（MIN_NOTIONAL filter）
         """
         self.symbol = symbol
         self.investment_amount = investment_amount
@@ -99,6 +106,9 @@ class BacktestEngine:
         self.lower_price = lower_price
         self.upper_price = upper_price
         self.stop_loss_percent = stop_loss_percent
+        self.min_qty = min_qty
+        self.step_size = step_size
+        self.min_notional = min_notional
 
         self.strategy: Optional[GridStrategy] = None
         self.stats = PortfolioStats(
@@ -149,7 +159,9 @@ class BacktestEngine:
             current_price = kline["close"]
             self.strategy.update_current_price(current_price)
 
-            if current_price <= initial_price * (1 - self.stop_loss_percent / 100):
+            # 損切り: lower_price を基準に（RiskManager と統一）
+            stop_loss_price = lower * (1 - self.stop_loss_percent / 100)
+            if current_price <= stop_loss_price:
                 self.stop_loss_triggered = True
                 logger.info(f"損切り発動: {i}番目のK線 @ {current_price:.2f}")
                 break
@@ -193,7 +205,10 @@ class BacktestEngine:
             if grid.level in self.buy_orders and grid.level not in self.positions:
                 if low <= grid.buy_price:
                     quantity = self.strategy.get_order_quantity(
-                        grid.buy_price, self.DEFAULT_MIN_QTY, self.DEFAULT_STEP_SIZE
+                        grid.buy_price,
+                        min_qty=self.min_qty,
+                        step_size=self.step_size,
+                        min_notional=self.min_notional,
                     )
                     self.positions[grid.level] = quantity
                     logger.debug(

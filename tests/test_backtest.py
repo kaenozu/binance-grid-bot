@@ -77,6 +77,7 @@ class TestBacktestEngine:
             upper_price=55000.0,
             stop_loss_percent=5.0,
         )
+        # 損切り価格: 45000 * 0.95 = 42750
         klines = [
             {
                 "open_time": datetime(2026, 1, 1, 0, 0),
@@ -89,10 +90,10 @@ class TestBacktestEngine:
             },
             {
                 "open_time": datetime(2026, 1, 1, 1, 0),
-                "open": 49000.0,
-                "high": 49000.0,
-                "low": 47000.0,
-                "close": 47000.0,
+                "open": 43000.0,
+                "high": 43000.0,
+                "low": 42000.0,
+                "close": 42000.0,
                 "volume": 100.0,
                 "close_time": datetime(2026, 1, 1, 2, 0),
             },
