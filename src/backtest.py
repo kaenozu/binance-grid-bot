@@ -20,6 +20,7 @@ logger = setup_logger("backtest")
 class BacktestDataFetcher:
     """過去の価格データを取得するクラス"""
 
+    # 公開データのため常にMainnetを使用（TestnetはK線データが不十分なため）
     BINANCE_KLINE_URL = "https://api.binance.com/api/v3/klines"
 
     @classmethod
@@ -75,6 +76,7 @@ class BacktestEngine:
     DEFAULT_MIN_QTY = 0.00001
     DEFAULT_STEP_SIZE = 0.00001
     DEFAULT_MIN_NOTIONAL = 5.0  # USDT
+    DEFAULT_FEE_RATE = 0.001  # 0.1% (Binance スポット取引手数料)
 
     def __init__(
         self,
@@ -87,6 +89,7 @@ class BacktestEngine:
         min_qty: float = DEFAULT_MIN_QTY,
         step_size: float = DEFAULT_STEP_SIZE,
         min_notional: float = DEFAULT_MIN_NOTIONAL,
+        fee_rate: float = DEFAULT_FEE_RATE,
     ):
         """
         Args:
@@ -99,6 +102,7 @@ class BacktestEngine:
             min_qty: 最小注文数量（LOT_SIZE filter）
             step_size: 数量の刻み幅（LOT_SIZE filter）
             min_notional: 最低注文金額（MIN_NOTIONAL filter）
+            fee_rate: 取引手数料率（例: 0.001 = 0.1%）
         """
         self.symbol = symbol
         self.investment_amount = investment_amount
@@ -109,6 +113,7 @@ class BacktestEngine:
         self.min_qty = min_qty
         self.step_size = step_size
         self.min_notional = min_notional
+        self.fee_rate = fee_rate
 
         self.strategy: Optional[GridStrategy] = None
         self.stats = PortfolioStats(
@@ -139,8 +144,12 @@ class BacktestEngine:
         initial_price = klines[0]["close"]
 
         range_factor = Settings.GRID_RANGE_FACTOR
-        lower = self.lower_price if self.lower_price else initial_price * (1 - range_factor)
-        upper = self.upper_price if self.upper_price else initial_price * (1 + range_factor)
+        lower = (
+            self.lower_price if self.lower_price else initial_price * (1 - range_factor)
+        )
+        upper = (
+            self.upper_price if self.upper_price else initial_price * (1 + range_factor)
+        )
 
         self.strategy = GridStrategy(
             symbol=self.symbol,
@@ -219,7 +228,10 @@ class BacktestEngine:
                 buy_price = self.buy_orders.get(grid.level, grid.buy_price)
                 if grid.sell_price and high >= grid.sell_price:
                     quantity = self.positions.pop(grid.level)
-                    profit = (grid.sell_price - buy_price) * quantity
+                    gross_profit = (grid.sell_price - buy_price) * quantity
+                    buy_fee = buy_price * quantity * self.fee_rate
+                    sell_fee = grid.sell_price * quantity * self.fee_rate
+                    profit = gross_profit - buy_fee - sell_fee
                     self.total_profit += profit
                     self.total_trades += 1
 
@@ -235,15 +247,25 @@ class BacktestEngine:
         """ポートフォリオ価値を計算
 
         現金残高 = 初期投資額 - 保有ポジションの購入費用合計
-        資産評価額 = 保有数量 × 現在価格
+        資産評価額 = 保有数量 × 現在価格 - 買い手数料 - 想定売却手数料
         ポートフォリオ価値 = 現金残高 + 資産評価額 + 実現利益合計
         """
         total_cost = sum(
-            self.buy_orders.get(level, 0) * qty
+            self.buy_orders.get(level, 0) * qty for level, qty in self.positions.items()
+        )
+        buy_fees = sum(
+            self.buy_orders.get(level, 0) * qty * self.fee_rate
             for level, qty in self.positions.items()
         )
+        estimated_sell_fees = sum(
+            qty * current_price * self.fee_rate for qty in self.positions.values()
+        )
         cash = self.investment_amount - total_cost
-        asset_value = sum(self.positions.values()) * current_price
+        asset_value = (
+            sum(self.positions.values()) * current_price
+            - buy_fees
+            - estimated_sell_fees
+        )
 
         return cash + asset_value + self.total_profit
 

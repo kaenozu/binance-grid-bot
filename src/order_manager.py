@@ -185,7 +185,7 @@ class OrderManager:
                         continue
                     order_info.status = "FILLED"
                     executed_qty = float(order["executedQty"])
-                    executed_price = float(order["price"])
+                    executed_price = float(order.get("avgPrice") or order["price"])
 
                     if order_info.side == "BUY":
                         self.strategy.mark_position_filled(

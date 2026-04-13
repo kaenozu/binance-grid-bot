@@ -92,11 +92,18 @@ class GridBot:
             )
             return
 
-        self.order_manager.place_buy_order_for_grid(grid_level)
+        success = self.order_manager.place_buy_order_for_grid(grid_level)
+        if not success:
+            logger.error(f"グリッド {grid_level}: 買い再注文に失敗しました")
 
     def _place_sell_for_grid(self, grid_level: int, quantity: float):
         """特定グリッドレベルの売り注文を配置（買い約定後）"""
-        self.order_manager.place_sell_order_for_grid(grid_level, quantity)
+        success = self.order_manager.place_sell_order_for_grid(grid_level, quantity)
+        if not success:
+            logger.error(
+                f"グリッド {grid_level}: 売り注文配置に失敗しました。"
+                "次回ティックでリトライされます。"
+            )
 
     def _tick(self) -> None:
         """1 ティック処理"""
@@ -113,7 +120,7 @@ class GridBot:
             new_fills = self.order_manager.check_order_fills()
 
             for fill in new_fills:
-                self.portfolio.record_trade(
+                profit = self.portfolio.record_trade(
                     side=fill.side,
                     price=fill.price,
                     quantity=fill.quantity,
@@ -126,11 +133,7 @@ class GridBot:
                     logger.info(f"グリッド {fill.grid}: 買い約定、売り注文配置")
                     self._place_sell_for_grid(fill.grid, fill.quantity)
                 elif fill.side == "SELL":
-                    buy_trade = self.portfolio.find_matching_buy_trade(fill.grid)
-                    profit = 0.0
-                    if buy_trade:
-                        profit = (fill.price - buy_trade.price) * fill.quantity
-                    self.risk_manager.record_position_close(profit)
+                    self.risk_manager.record_position_close(profit or 0.0)
                     logger.info(f"グリッド {fill.grid}: 決済完了、再注文配置")
                     self._place_grid_orders_for_level(fill.grid)
 
@@ -192,12 +195,59 @@ class GridBot:
         print("Ctrl+C で停止")
 
     def _emergency_stop(self):
-        """緊急停止"""
+        """緊急停止（オープンポジションを成行決済して終了）"""
         logger.warning("緊急停止処理開始...")
         self.is_running = False
         self.order_manager.cancel_all_orders()
+        self._close_open_positions()
         print(self.portfolio.generate_report())
         logger.info("緊急停止完了")
+
+    def _close_open_positions(self):
+        """オープンポジションを成行売却"""
+        open_positions = [g for g in self.strategy.grids if g.position_filled]
+        if not open_positions:
+            return
+
+        logger.warning(f"オープンポジション {len(open_positions)} 件を成行決済します")
+        base_asset = self.strategy.symbol.replace("USDT", "")
+        for grid in open_positions:
+            try:
+                balances = self.client.get_account_balance()
+                if base_asset not in balances:
+                    continue
+                available = balances[base_asset]["free"]
+                if available <= 0:
+                    continue
+
+                qty_per_grid = self.strategy.get_order_quantity(grid.buy_price)
+                sell_qty = min(available, qty_per_grid)
+                if sell_qty <= 0:
+                    continue
+
+                result = self.client.place_order(
+                    symbol=self.strategy.symbol,
+                    side="SELL",
+                    quantity=sell_qty,
+                    price=None,
+                )
+                filled_qty = float(
+                    result.get("executedQty", result.get("origQty", sell_qty))
+                )
+                filled_price = float(result.get("avgPrice") or result.get("price", 0))
+                self.portfolio.record_trade(
+                    side="SELL",
+                    price=filled_price,
+                    quantity=filled_qty,
+                    order_id=result["orderId"],
+                    grid_level=grid.level,
+                )
+                grid.position_filled = False
+                logger.info(
+                    f"グリッド {grid.level}: 緊急成行決済 {filled_qty} @ {filled_price}"
+                )
+            except Exception as e:
+                logger.error(f"グリッド {grid.level}: 緊急決済失敗: {e}")
 
     def stop(self):
         """ボット停止"""

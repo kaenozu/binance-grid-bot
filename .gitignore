@@ -35,3 +35,4 @@ env/
 
 # Test cache
 .pytest_cache/
+.coverage

@@ -42,10 +42,10 @@ class Settings:
     MAX_POSITIONS: int = int(os.getenv("MAX_POSITIONS", "5"))
 
     # ボット動作設定
-    CHECK_INTERVAL: int = 10  # 価格チェック間隔（秒）
-    STATUS_DISPLAY_INTERVAL: int = 60  # ステータス表示間隔（秒）
-    MAX_CONSECUTIVE_ERRORS: int = 5  # 連続エラー許容回数
-    GRID_RANGE_FACTOR: float = 0.15  # グリッド範囲の自動設定係数（±15%）
+    CHECK_INTERVAL: int = int(os.getenv("CHECK_INTERVAL", "10"))
+    STATUS_DISPLAY_INTERVAL: int = int(os.getenv("STATUS_DISPLAY_INTERVAL", "60"))
+    MAX_CONSECUTIVE_ERRORS: int = int(os.getenv("MAX_CONSECUTIVE_ERRORS", "5"))
+    GRID_RANGE_FACTOR: float = float(os.getenv("GRID_RANGE_FACTOR", "0.15"))
 
     @classmethod
     def validate(cls) -> list[str]:
