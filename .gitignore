@@ -14,6 +14,9 @@ build/
 logs/
 *.log
 
+# Backtest results
+backtest_*.json
+
 # IDE
 .vscode/
 .idea/
@@ -29,3 +32,6 @@ Thumbs.db
 venv/
 .venv/
 env/
+
+# Test cache
+.pytest_cache/
