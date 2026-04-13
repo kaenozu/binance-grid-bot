@@ -1,0 +1,16 @@
+{
+  "symbol": "BTCUSDT",
+  "period": "2026-03-24 02:00:00 ~ 2026-04-13 21:00:00",
+  "kline_count": 500,
+  "start_price": 71085.16,
+  "end_price": 70819.02,
+  "price_change_percent": -0.3743960061424908,
+  "grid_count": 30,
+  "grid_range": "60422.39 - 81747.93",
+  "total_trades": 22,
+  "total_profit": 3.7177538679999724,
+  "roi_percent": 0.7435507735999978,
+  "max_drawdown_percent": 1.138316929976484,
+  "stop_loss_triggered": false,
+  "avg_profit_per_trade": 0.16898881218181694
+}
