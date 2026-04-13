@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Optional
 
 import requests
+from config.settings import Settings
 from src.grid_strategy import GridStrategy
 from src.portfolio import PortfolioStats
 from utils.logger import setup_logger
@@ -70,6 +71,10 @@ class BacktestDataFetcher:
 class BacktestEngine:
     """バックテストエンジン"""
 
+    # バックテスト用のデフォルト数量パラメータ
+    DEFAULT_MIN_QTY = 0.00001
+    DEFAULT_STEP_SIZE = 0.00001
+
     def __init__(
         self,
         symbol: str,
@@ -123,8 +128,9 @@ class BacktestEngine:
 
         initial_price = klines[0]["close"]
 
-        lower = self.lower_price if self.lower_price else initial_price * 0.85
-        upper = self.upper_price if self.upper_price else initial_price * 1.15
+        range_factor = Settings.GRID_RANGE_FACTOR
+        lower = self.lower_price if self.lower_price else initial_price * (1 - range_factor)
+        upper = self.upper_price if self.upper_price else initial_price * (1 + range_factor)
 
         self.strategy = GridStrategy(
             symbol=self.symbol,
@@ -164,7 +170,7 @@ class BacktestEngine:
 
         return self._generate_report(klines)
 
-    def _place_initial_orders(self, current_price: float = None):
+    def _place_initial_orders(self):
         """初期買い注文を記録"""
         for grid in self.strategy.get_active_buy_grids():
             self.buy_orders[grid.level] = grid.buy_price
@@ -178,7 +184,7 @@ class BacktestEngine:
             if grid.level in self.buy_orders and grid.level not in self.positions:
                 if low <= grid.buy_price:
                     quantity = self.strategy.get_order_quantity(
-                        grid.buy_price, 0.00001, 0.00001
+                        grid.buy_price, self.DEFAULT_MIN_QTY, self.DEFAULT_STEP_SIZE
                     )
                     self.positions[grid.level] = quantity
                     logger.debug(
@@ -193,7 +199,7 @@ class BacktestEngine:
                     self.total_profit += profit
                     self.total_trades += 1
 
-                    del self.buy_orders[grid.level]
+                    # グリッドをリセットして次の売買サイクルに備える
                     self.buy_orders[grid.level] = grid.buy_price
 
                     logger.debug(
@@ -201,13 +207,17 @@ class BacktestEngine:
                     )
 
     def _calculate_portfolio_value(self, current_price: float) -> float:
-        """ポートフォリオ価値を計算"""
-        cash = self.investment_amount
+        """ポートフォリオ価値を計算
 
-        for level, qty in self.positions.items():
-            buy_price = self.buy_orders.get(level, 0)
-            cash -= buy_price * qty
-
+        現金残高 = 初期投資額 - 保有ポジションの購入費用合計
+        資産評価額 = 保有数量 × 現在価格
+        ポートフォリオ価値 = 現金残高 + 資産評価額 + 実現利益合計
+        """
+        total_cost = sum(
+            self.buy_orders.get(level, 0) * qty
+            for level, qty in self.positions.items()
+        )
+        cash = self.investment_amount - total_cost
         asset_value = sum(self.positions.values()) * current_price
 
         return cash + asset_value + self.total_profit

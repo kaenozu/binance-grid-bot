@@ -19,6 +19,7 @@ logger = setup_logger("binance_client")
 
 MAX_RETRIES = 3
 RETRY_DELAY = 1
+SYMBOL_CACHE_TTL = 300  # シンボル情報のキャッシュ有効期限（秒）
 
 
 class BinanceAPIError(Exception):
@@ -39,7 +40,7 @@ class BinanceClient:
         )
         self.api_key = Settings.BINANCE_API_KEY
         self.api_secret = Settings.BINANCE_API_SECRET
-        self._symbol_cache: dict[str, dict] = {}
+        self._symbol_cache: dict[str, tuple[dict, float]] = {}
 
         self.session = requests.Session()
         self.session.headers.update(
@@ -88,11 +89,12 @@ class BinanceClient:
             query_string = urlencode(params)
             params["signature"] = self._generate_signature(query_string)
 
-        last_error = None
+        last_error: Optional[BinanceAPIError] = None
         for attempt in range(MAX_RETRIES):
             try:
                 response = self._send_request(method, url, params)
 
+                # レートリミット・サーバーエラーチェック
                 if response.status_code == 429:
                     retry_after = int(
                         response.headers.get("Retry-After", RETRY_DELAY * (2**attempt))
@@ -110,31 +112,23 @@ class BinanceClient:
                         f"サーバーエラー ({response.status_code})、{wait_time}秒後にリトライ ({attempt + 1}/{MAX_RETRIES})"
                     )
                     time.sleep(wait_time)
-                    last_error = BinanceAPIError(
-                        f"サーバーエラー: {response.status_code}"
-                    )
+                    last_error = BinanceAPIError(f"サーバーエラー: {response.status_code}")
                     continue
 
                 response.raise_for_status()
                 return response.json()
 
             except requests.exceptions.Timeout as e:
-                wait_time = RETRY_DELAY * (2**attempt)
-                logger.warning(
-                    f"リクエストタイムアウト、{wait_time}秒後にリトライ ({attempt + 1}/{MAX_RETRIES})"
-                )
-                time.sleep(wait_time)
-                last_error = BinanceAPIError(f"タイムアウト: {e}")
-                continue
+                last_error = self._handle_retryable_error(e, attempt, "タイムアウト")
+                if last_error is None:
+                    continue
+                raise last_error from e
 
             except requests.exceptions.ConnectionError as e:
-                wait_time = RETRY_DELAY * (2**attempt)
-                logger.warning(
-                    f"接続エラー、{wait_time}秒後にリトライ ({attempt + 1}/{MAX_RETRIES})"
-                )
-                time.sleep(wait_time)
-                last_error = BinanceAPIError(f"接続エラー: {e}")
-                continue
+                last_error = self._handle_retryable_error(e, attempt, "接続エラー")
+                if last_error is None:
+                    continue
+                raise last_error from e
 
             except requests.exceptions.HTTPError as e:
                 if 400 <= response.status_code < 500:
@@ -147,18 +141,31 @@ class BinanceClient:
                 raise BinanceAPIError(f"HTTP エラー: {e}") from e
 
             except requests.exceptions.RequestException as e:
-                if attempt < MAX_RETRIES - 1:
-                    wait_time = RETRY_DELAY * (2**attempt)
-                    logger.warning(
-                        f"API リクエスト失敗、{wait_time}秒後にリトライ ({attempt + 1}/{MAX_RETRIES}): {e}"
-                    )
-                    time.sleep(wait_time)
-                    last_error = BinanceAPIError(f"リクエスト失敗: {e}")
+                last_error = self._handle_retryable_error(e, attempt, "リクエスト失敗")
+                if last_error is None:
                     continue
-                raise BinanceAPIError(f"API リクエスト失敗: {e}") from e
+                raise last_error from e
 
         logger.error(f"リトライ上限到達 ({MAX_RETRIES} 回)")
         raise last_error or BinanceAPIError("リトライ上限到達")
+
+    def _handle_retryable_error(
+        self, exc: Exception, attempt: int, error_type: str
+    ) -> Optional[BinanceAPIError]:
+        """リトライ可能エラーを処理
+
+        Returns:
+            BinanceAPIError: 再試行不可能な場合（上限到達）
+            None: 再試行可能な場合
+        """
+        if attempt < MAX_RETRIES - 1:
+            wait_time = RETRY_DELAY * (2**attempt)
+            logger.warning(
+                f"{error_type}、{wait_time}秒後にリトライ ({attempt + 1}/{MAX_RETRIES}): {exc}"
+            )
+            time.sleep(wait_time)
+            return None
+        return BinanceAPIError(f"{error_type}: {exc}")
 
     def _send_request(self, method: str, url: str, params: dict) -> requests.Response:
         """HTTP リクエストを送信"""
@@ -195,9 +202,13 @@ class BinanceClient:
         return float(data["price"])
 
     def get_symbol_info(self, symbol: str) -> Optional[dict]:
-        """取引ペアの情報を取得（キャッシュ付き）"""
+        """取引ペアの情報を取得（キャッシュ付き、TTL期限切れで更新）"""
+        now = time.time()
         if symbol in self._symbol_cache:
-            return self._symbol_cache[symbol]
+            cached_info, cached_time = self._symbol_cache[symbol]
+            if now - cached_time < SYMBOL_CACHE_TTL:
+                return cached_info
+            logger.debug(f"シンボルキャッシュ期限切れ: {symbol}")
 
         data = self._make_request("GET", "/api/v3/exchangeInfo")
 
@@ -221,7 +232,7 @@ class BinanceClient:
                         filters.get("PRICE_FILTER", {}).get("tickSize", 0)
                     ),
                 }
-                self._symbol_cache[symbol] = info
+                self._symbol_cache[symbol] = (info, now)
                 return info
 
         return None

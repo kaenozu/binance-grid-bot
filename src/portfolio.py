@@ -104,7 +104,7 @@ class Portfolio:
         self.stats.last_update = datetime.now()
 
         if side == "SELL":
-            buy_trade = self._find_matching_buy_trade(grid_level)
+            buy_trade = self.find_matching_buy_trade(grid_level)
             if buy_trade:
                 profit = (price - buy_trade.price) * quantity
                 trade.profit = profit
@@ -130,8 +130,15 @@ class Portfolio:
 
         logger.info(f"取引記録追加: {side} {quantity} @ {price}")
 
-    def _find_matching_buy_trade(self, grid_level: int) -> Optional[Trade]:
-        """対応する未マッチの買い注文を最新順に探す"""
+    def find_matching_buy_trade(self, grid_level: int) -> Optional[Trade]:
+        """対応する未マッチの買い注文を最新順に探す
+
+        Args:
+            grid_level: グリッドレベル
+
+        Returns:
+            対応する買い注文（ない場合はNone）
+        """
         for trade in reversed(self.trades):
             if (
                 trade.side == "BUY"

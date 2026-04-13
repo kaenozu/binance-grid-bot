@@ -5,8 +5,9 @@
 関連ファイル: src/backtest.py, config/settings.py
 """
 
-import sys
+import argparse
 import json
+import sys
 
 from config.settings import Settings
 from src.backtest import BacktestDataFetcher, BacktestEngine
@@ -15,34 +16,77 @@ from utils.logger import setup_logger
 logger = setup_logger("backtest_main")
 
 
+def parse_args() -> argparse.Namespace:
+    """CLI引数をパース"""
+    parser = argparse.ArgumentParser(
+        description="グリッド取引ボットのバックテストを実行",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.add_argument(
+        "--symbol",
+        type=str,
+        default=Settings.TRADING_SYMBOL,
+        help="取引ペア",
+    )
+    parser.add_argument(
+        "--grid-count",
+        type=int,
+        default=Settings.GRID_COUNT,
+        help="グリッド数",
+    )
+    parser.add_argument(
+        "--investment",
+        type=float,
+        default=Settings.INVESTMENT_AMOUNT,
+        help="投資額（USDT）",
+    )
+    parser.add_argument(
+        "--stop-loss",
+        type=float,
+        default=Settings.STOP_LOSS_PERCENTAGE,
+        help="損切り割合（%%）",
+    )
+    parser.add_argument(
+        "--kline-limit",
+        type=int,
+        default=720,
+        help="K線データ取得件数",
+    )
+    parser.add_argument(
+        "--kline-interval",
+        type=str,
+        default="1h",
+        help="K線時間足",
+    )
+    return parser.parse_args()
+
+
 def main():
     """バックテストを実行"""
+    args = parse_args()
+
     print("=" * 60)
     print("バックテスト実行")
     print("=" * 60)
     print()
-    
-    symbol = Settings.TRADING_SYMBOL
-    investment = Settings.INVESTMENT_AMOUNT
-    grid_count = Settings.GRID_COUNT
-    
-    # 引数で設定を上書き可能
-    if len(sys.argv) > 1:
-        symbol = sys.argv[1]
-    if len(sys.argv) > 2:
-        grid_count = int(sys.argv[2])
-    if len(sys.argv) > 3:
-        investment = float(sys.argv[3])
-    
+
+    symbol = args.symbol
+    investment = args.investment
+    grid_count = args.grid_count
+    stop_loss_percent = args.stop_loss
+
     print(f"設定:")
     print(f"  取引ペア: {symbol}")
     print(f"  グリッド数: {grid_count}")
     print(f"  投資額: {investment} USDT")
+    print(f"  損切り: {stop_loss_percent}%")
     print()
-    
-    # K線データ取得（1時間足、720件 = 約30日分）
+
+    # K線データ取得
     print("K線データ取得中...")
-    klines = BacktestDataFetcher.fetch_klines(symbol, interval="1h", limit=720)
+    klines = BacktestDataFetcher.fetch_klines(
+        symbol, interval=args.kline_interval, limit=args.kline_limit
+    )
     
     if not klines:
         print("エラー: K線データの取得に失敗しました")
@@ -56,13 +100,20 @@ def main():
     
     # バックテスト実行
     print("バックテスト実行中...")
+
+    # グリッド範囲の自動設定（開始価格の±15%）
+    start_price = klines[0]["close"]
+    range_factor = Settings.GRID_RANGE_FACTOR
+    lower_price = start_price * (1 - range_factor)
+    upper_price = start_price * (1 + range_factor)
+
     engine = BacktestEngine(
         symbol=symbol,
         investment_amount=investment,
         grid_count=grid_count,
-        lower_price=klines[0]["close"] * 0.85,
-        upper_price=klines[0]["close"] * 1.15,
-        stop_loss_percent=15.0  # バックテストでは広めに
+        lower_price=lower_price,
+        upper_price=upper_price,
+        stop_loss_percent=stop_loss_percent,
     )
     
     report = engine.run(klines)

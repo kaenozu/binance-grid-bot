@@ -41,6 +41,12 @@ class Settings:
     STOP_LOSS_PERCENTAGE: float = float(os.getenv("STOP_LOSS_PERCENTAGE", "5"))
     MAX_POSITIONS: int = int(os.getenv("MAX_POSITIONS", "5"))
 
+    # ボット動作設定
+    CHECK_INTERVAL: int = 10  # 価格チェック間隔（秒）
+    STATUS_DISPLAY_INTERVAL: int = 60  # ステータス表示間隔（秒）
+    MAX_CONSECUTIVE_ERRORS: int = 5  # 連続エラー許容回数
+    GRID_RANGE_FACTOR: float = 0.15  # グリッド範囲の自動設定係数（±15%）
+
     @classmethod
     def validate(cls) -> list[str]:
         """設定のバリデーションを行い、エラーリストを返す"""

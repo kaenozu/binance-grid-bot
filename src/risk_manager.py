@@ -18,18 +18,26 @@ logger = setup_logger("risk_manager")
 
 class RiskManager:
     """リスク管理クラス"""
-    
-    def __init__(self, client: BinanceClient, strategy: GridStrategy, entry_price: float):
+
+    def __init__(
+        self,
+        client: BinanceClient,
+        strategy: GridStrategy,
+        entry_price: float,
+        halt_on_out_of_range: bool = False,
+    ):
         """
         Args:
             client: Binance API クライアント
             strategy: グリッド戦略
             entry_price: エントリー価格（ボット開始時の価格）
+            halt_on_out_of_range: 価格がグリッド範囲外の場合に停止するかどうか
         """
         self.client = client
         self.strategy = strategy
         self.entry_price = entry_price
-        
+        self.halt_on_out_of_range = halt_on_out_of_range
+
         # 損切り価格
         self.stop_loss_price = entry_price * (1 - Settings.STOP_LOSS_PERCENTAGE / 100)
         
@@ -105,7 +113,8 @@ class RiskManager:
             if drawdown > self.max_drawdown:
                 self.max_drawdown = drawdown
     
-    def get_risk_status(self) -> dict:
+    @property
+    def risk_status(self) -> dict:
         """リスクステータスを返す"""
         return {
             "stop_loss_price": self.stop_loss_price,
@@ -119,22 +128,22 @@ class RiskManager:
     
     def should_halt_trading(self, current_price: float) -> bool:
         """取引停止すべきか判断
-        
+
         Args:
             current_price: 現在価格
-            
+
         Returns:
             True: 停止すべき、False: 継続
         """
         # 損切りチェック
         if self.check_stop_loss(current_price):
             return True
-        
-        # グリッド範囲外チェック
+
+        # グリッド範囲外チェック（設定可能な動作）
         if not self.strategy.is_within_grid_range(current_price):
             logger.warning(f"価格がグリッド範囲外: {current_price:.2f}")
-            return False  # 警告だが停止はしない
-        
+            return self.halt_on_out_of_range
+
         return False
     
     def get_emergency_actions(self) -> list[str]:
