@@ -107,7 +107,9 @@ class OrderManager:
                     logger.warning(f"グリッド {grid.level}: 無効な数量 {quantity}")
                     continue
 
-                adjusted_price = self._adjust_price(grid.buy_price, symbol_info["tick_size"])
+                adjusted_price = self._adjust_price(
+                    grid.buy_price, symbol_info["tick_size"]
+                )
                 order = self.client.place_order(
                     symbol=self.strategy.symbol,
                     side="BUY",
@@ -115,7 +117,9 @@ class OrderManager:
                     price=adjusted_price,
                 )
 
-                self._register_and_handle(order, grid.level, "BUY", adjusted_price, quantity)
+                self._register_and_handle(
+                    order, grid.level, "BUY", adjusted_price, quantity
+                )
                 placed_count += 1
 
             except Exception as e:
@@ -138,7 +142,9 @@ class OrderManager:
                 if quantity <= 0:
                     continue
 
-                adjusted_price = self._adjust_price(grid.sell_price, symbol_info["tick_size"])
+                adjusted_price = self._adjust_price(
+                    grid.sell_price, symbol_info["tick_size"]
+                )
                 order = self.client.place_order(
                     symbol=self.strategy.symbol,
                     side="SELL",
@@ -146,7 +152,9 @@ class OrderManager:
                     price=adjusted_price,
                 )
 
-                self._register_and_handle(order, grid.level, "SELL", adjusted_price, quantity)
+                self._register_and_handle(
+                    order, grid.level, "SELL", adjusted_price, quantity
+                )
                 placed_count += 1
 
             except Exception as e:
@@ -166,34 +174,43 @@ class OrderManager:
         new_fills: list[FillEvent] = []
 
         for order_id, order_info in list(self._active_orders.items()):
-            if order_info.status == "FILLED":
-                continue
-
             try:
-                order = self.client.get_order(self.strategy.symbol, order_id)
-
-                if order["status"] == "FILLED":
-                    order_info.status = "FILLED"  # statusを更新してcleanup対象にする
-                    grid_level = order_info.grid_level
+                if order_info.status == "FILLED":
+                    executed_qty = order_info.quantity
+                    executed_price = order_info.price
+                else:
+                    order = self.client.get_order(self.strategy.symbol, order_id)
+                    if order["status"] != "FILLED":
+                        continue
+                    order_info.status = "FILLED"
                     executed_qty = float(order["executedQty"])
                     executed_price = float(order["price"])
 
                     if order_info.side == "BUY":
-                        self.strategy.mark_position_filled(grid_level, order_id)
-                        logger.info(f"グリッド {grid_level}: 買い約定完了 @ {executed_price}")
-                    elif order_info.side == "SELL":
-                        self.strategy.mark_position_closed(grid_level, order_id)
-                        logger.info(f"グリッド {grid_level}: 売り約定完了 @ {executed_price}")
-
-                    new_fills.append(
-                        FillEvent(
-                            grid=grid_level,
-                            side=order_info.side,
-                            price=executed_price,
-                            quantity=executed_qty,
-                            order_id=order_id,
+                        self.strategy.mark_position_filled(
+                            grid_level := order_info.grid_level, order_id
                         )
+                        logger.info(
+                            f"グリッド {grid_level}: 買い約定完了 @ {executed_price}"
+                        )
+                    elif order_info.side == "SELL":
+                        self.strategy.mark_position_closed(
+                            grid_level := order_info.grid_level, order_id
+                        )
+                        logger.info(
+                            f"グリッド {grid_level}: 売り約定完了 @ {executed_price}"
+                        )
+
+                grid_level = order_info.grid_level
+                new_fills.append(
+                    FillEvent(
+                        grid=grid_level,
+                        side=order_info.side,
+                        price=executed_price,
+                        quantity=executed_qty,
+                        order_id=order_id,
                     )
+                )
 
             except Exception as e:
                 logger.error(f"注文状態確認失敗 order_id={order_id}: {e}")
@@ -239,7 +256,9 @@ class OrderManager:
                 logger.warning(f"グリッド {grid_level}: 無効な数量 {quantity}")
                 return False
 
-            adjusted_price = self._adjust_price(grid.buy_price, symbol_info["tick_size"])
+            adjusted_price = self._adjust_price(
+                grid.buy_price, symbol_info["tick_size"]
+            )
             order = self.client.place_order(
                 symbol=self.strategy.symbol,
                 side="BUY",
@@ -247,7 +266,9 @@ class OrderManager:
                 price=adjusted_price,
             )
 
-            self._register_and_handle(order, grid_level, "BUY", adjusted_price, quantity)
+            self._register_and_handle(
+                order, grid_level, "BUY", adjusted_price, quantity
+            )
             return True
 
         except Exception as e:
@@ -265,7 +286,9 @@ class OrderManager:
             if not grid.sell_price:
                 return False
 
-            adjusted_price = self._adjust_price(grid.sell_price, symbol_info["tick_size"])
+            adjusted_price = self._adjust_price(
+                grid.sell_price, symbol_info["tick_size"]
+            )
             order = self.client.place_order(
                 symbol=self.strategy.symbol,
                 side="SELL",
@@ -273,7 +296,9 @@ class OrderManager:
                 price=adjusted_price,
             )
 
-            self._register_and_handle(order, grid_level, "SELL", adjusted_price, quantity)
+            self._register_and_handle(
+                order, grid_level, "SELL", adjusted_price, quantity
+            )
             return True
 
         except Exception as e:
@@ -325,7 +350,11 @@ class OrderManager:
         else:
             if side == "BUY":
                 self.strategy.grids[grid_level].buy_order_id = order["orderId"]
-                logger.info(f"グリッド {grid_level}: 買い注文配置 @ {price}, qty={quantity}")
+                logger.info(
+                    f"グリッド {grid_level}: 買い注文配置 @ {price}, qty={quantity}"
+                )
             else:
                 self.strategy.grids[grid_level].sell_order_id = order["orderId"]
-                logger.info(f"グリッド {grid_level}: 売り注文配置 @ {price}, qty={quantity}")
+                logger.info(
+                    f"グリッド {grid_level}: 売り注文配置 @ {price}, qty={quantity}"
+                )

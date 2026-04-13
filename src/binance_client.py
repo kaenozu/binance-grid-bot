@@ -112,7 +112,9 @@ class BinanceClient:
                         f"サーバーエラー ({response.status_code})、{wait_time}秒後にリトライ ({attempt + 1}/{MAX_RETRIES})"
                     )
                     time.sleep(wait_time)
-                    last_error = BinanceAPIError(f"サーバーエラー: {response.status_code}")
+                    last_error = BinanceAPIError(
+                        f"サーバーエラー: {response.status_code}"
+                    )
                     continue
 
                 response.raise_for_status()
@@ -134,9 +136,7 @@ class BinanceClient:
                 status_code = getattr(e.response, "status_code", 0) if e.response else 0
                 if 400 <= status_code < 500:
                     response_text = e.response.text if e.response else ""
-                    logger.error(
-                        f"クライアントエラー ({status_code}): {response_text}"
-                    )
+                    logger.error(f"クライアントエラー ({status_code}): {response_text}")
                     raise BinanceAPIError(
                         f"クライアントエラー: {status_code} - {response_text}"
                     ) from e
@@ -212,32 +212,31 @@ class BinanceClient:
                 return cached_info
             logger.debug(f"シンボルキャッシュ期限切れ: {symbol}")
 
-        data = self._make_request("GET", "/api/v3/exchangeInfo")
+        data = self._make_request("GET", "/api/v3/exchangeInfo", {"symbol": symbol})
 
-        for s in data.get("symbols", []):
-            if s["symbol"] == symbol:
-                filters = {f["filterType"]: f for f in s["filters"]}
-                info = {
-                    "symbol": s["symbol"],
-                    "status": s["status"],
-                    "base_asset": s["baseAsset"],
-                    "quote_asset": s["quoteAsset"],
-                    "price_precision": s.get("pricePrecision", 8),
-                    "quantity_precision": s.get("quantityPrecision", 6),
-                    "min_qty": float(filters.get("LOT_SIZE", {}).get("minQty", 0)),
-                    "max_qty": float(filters.get("LOT_SIZE", {}).get("maxQty", 0)),
-                    "step_size": float(filters.get("LOT_SIZE", {}).get("stepSize", 0)),
-                    "min_notional": float(
-                        filters.get("MIN_NOTIONAL", {}).get("minNotional", 0)
-                    ),
-                    "tick_size": float(
-                        filters.get("PRICE_FILTER", {}).get("tickSize", 0)
-                    ),
-                }
-                self._symbol_cache[symbol] = (info, now)
-                return info
+        symbols = data.get("symbols", [])
+        if not symbols:
+            return None
 
-        return None
+        s = symbols[0]
+        filters = {f["filterType"]: f for f in s["filters"]}
+        info = {
+            "symbol": s["symbol"],
+            "status": s["status"],
+            "base_asset": s["baseAsset"],
+            "quote_asset": s["quoteAsset"],
+            "price_precision": s.get("pricePrecision", 8),
+            "quantity_precision": s.get("quantityPrecision", 6),
+            "min_qty": float(filters.get("LOT_SIZE", {}).get("minQty", 0)),
+            "max_qty": float(filters.get("LOT_SIZE", {}).get("maxQty", 0)),
+            "step_size": float(filters.get("LOT_SIZE", {}).get("stepSize", 0)),
+            "min_notional": float(
+                filters.get("MIN_NOTIONAL", {}).get("minNotional", 0)
+            ),
+            "tick_size": float(filters.get("PRICE_FILTER", {}).get("tickSize", 0)),
+        }
+        self._symbol_cache[symbol] = (info, now)
+        return info
 
     def place_order(
         self, symbol: str, side: str, quantity: float, price: Optional[float] = None

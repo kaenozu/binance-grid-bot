@@ -130,7 +130,6 @@ class GridBot:
                     if buy_trade:
                         profit = (fill.price - buy_trade.price) * fill.quantity
                     self.risk_manager.record_position_close(profit)
-                    self.strategy.mark_position_closed(fill.grid, fill.order_id)
                     logger.info(f"グリッド {fill.grid}: 決済完了、再注文配置")
                     self._place_grid_orders_for_level(fill.grid)
 
