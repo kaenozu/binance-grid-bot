@@ -22,10 +22,13 @@ def setup_logger(name: str = "grid_bot") -> logging.Logger:
     """
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
-    
+
     # すでにハンドラが設定されている場合はスキップ
     if logger.handlers:
         return logger
+
+    # 親ロガーへの伝播を防止（ログの重複出力を防ぐ）
+    logger.propagate = False
     
     # フォーマット
     formatter = logging.Formatter(
