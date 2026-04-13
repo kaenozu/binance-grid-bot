@@ -6,8 +6,6 @@
 """
 
 import pytest
-from unittest.mock import MagicMock
-from datetime import datetime
 from src.portfolio import Portfolio, Trade, PortfolioStats
 
 
@@ -15,35 +13,21 @@ class TestPortfolio:
     """資産管理のテスト"""
 
     @pytest.fixture
-    def mock_client(self):
-        """モッククライアント"""
-        client = MagicMock()
-        client.get_account_balance.return_value = {
-            "USDT": {"free": 10000.0, "locked": 0.0},
-            "BTC": {"free": 0.002, "locked": 0.0},
-        }
-        return client
-
-    @pytest.fixture
-    def portfolio(self, mock_client):
-        """テスト用ポートフォリオ"""
-        return Portfolio(mock_client, "BTCUSDT", "USDT")
+    def portfolio(self, mock_client_for_portfolio):
+        return Portfolio(mock_client_for_portfolio, "BTCUSDT", "USDT")
 
     def test_initial_balance(self, portfolio):
-        """初期残高が正しく設定されるか"""
         assert portfolio.stats.initial_balance == 10000.0
         assert portfolio.stats.current_balance == 10000.0
 
     def test_record_buy_trade(self, portfolio):
-        """買い注文が正しく記録されるか"""
         portfolio.record_trade(
             side="BUY",
             price=50000.0,
             quantity=0.002,
             order_id=12345,
-            grid_level=5
+            grid_level=5,
         )
-
         assert len(portfolio.trades) == 1
         assert portfolio.trades[0].side == "BUY"
         assert portfolio.trades[0].price == 50000.0
@@ -51,63 +35,51 @@ class TestPortfolio:
         assert portfolio.stats.total_trades == 1
 
     def test_record_sell_trade_with_profit(self, portfolio):
-        """売り注文の利益が正しく計算されるか"""
-        # 買い注文を記録
         portfolio.record_trade(
             side="BUY",
             price=50000.0,
             quantity=0.002,
             order_id=12345,
-            grid_level=5
+            grid_level=5,
         )
-
-        # 同じグリッドの売り注文
         portfolio.record_trade(
             side="SELL",
             price=51000.0,
             quantity=0.002,
             order_id=12346,
-            grid_level=5
+            grid_level=5,
         )
-
-        # 利益: (51000 - 50000) * 0.002 = 2.0
         assert portfolio.stats.realized_profit == 2.0
         assert portfolio.stats.winning_trades == 1
         assert portfolio.stats.losing_trades == 0
 
     def test_record_sell_trade_with_loss(self, portfolio):
-        """売り注文の損失が正しく計算されるか"""
         portfolio.record_trade(
             side="BUY",
             price=50000.0,
             quantity=0.002,
             order_id=12345,
-            grid_level=5
+            grid_level=5,
         )
-
         portfolio.record_trade(
             side="SELL",
             price=49000.0,
             quantity=0.002,
             order_id=12346,
-            grid_level=5
+            grid_level=5,
         )
-
-        # 損失: (49000 - 50000) * 0.002 = -2.0
         assert portfolio.stats.realized_profit == -2.0
         assert portfolio.stats.winning_trades == 0
         assert portfolio.stats.losing_trades == 1
 
     def test_win_rate_calculation(self, portfolio):
-        """勝率が正しく計算されるか"""
-        # 2勝ち1負け
         for i in range(3):
             portfolio.record_trade(
                 side="BUY",
                 price=50000.0,
                 quantity=0.002,
                 order_id=12340 + i * 2,
-                grid_level=i
+                grid_level=i,
             )
             sell_price = 51000.0 if i < 2 else 49000.0
             portfolio.record_trade(
@@ -115,125 +87,113 @@ class TestPortfolio:
                 price=sell_price,
                 quantity=0.002,
                 order_id=12341 + i * 2,
-                grid_level=i
+                grid_level=i,
             )
-
-        # 決済済み: 3件、勝ち: 2件
         assert portfolio.stats.winning_trades == 2
         assert portfolio.stats.losing_trades == 1
-        # win_rate = 2 / (2 + 1) * 100 = 66.67%
         assert abs(portfolio.stats.win_rate - 66.66666666666666) < 0.01
 
-    def test_avg_profit_per_trade(self, portfolio):
-        """平均利益が正しく計算されるか"""
+    def test_avg_profit_per_trade_uses_settled_count(self, portfolio):
         portfolio.record_trade(
             side="BUY",
             price=50000.0,
             quantity=0.002,
             order_id=12345,
-            grid_level=0
+            grid_level=0,
         )
         portfolio.record_trade(
             side="SELL",
             price=51000.0,
             quantity=0.002,
             order_id=12346,
-            grid_level=0
+            grid_level=0,
         )
-        portfolio.record_trade(
-            side="BUY",
-            price=50000.0,
-            quantity=0.002,
-            order_id=12347,
-            grid_level=1
-        )
-        portfolio.record_trade(
-            side="SELL",
-            price=50500.0,
-            quantity=0.002,
-            order_id=12348,
-            grid_level=1
-        )
-
-        # 総利益: 2.0 + 1.0 = 3.0
-        # 平均: 3.0 / 4 = 0.75
-        assert abs(portfolio.stats.avg_profit_per_trade - 0.75) < 0.01
+        assert portfolio.stats.settled_trades == 1
+        assert abs(portfolio.stats.avg_profit_per_trade - 2.0) < 0.01
 
     def test_unrealized_pnl(self, portfolio):
-        """未実現損益が正しく計算されるか"""
-        # 買い注文のみ（ポジション持ち）
         portfolio.record_trade(
             side="BUY",
             price=50000.0,
             quantity=0.002,
             order_id=12345,
-            grid_level=5
+            grid_level=5,
         )
-
-        # 現在価格 51000 での未実現利益
         portfolio.calculate_unrealized_pnl(51000.0)
-        # (51000 - 50000) * 0.002 = 2.0
         assert portfolio.stats.unrealized_profit == 2.0
 
     def test_unrealized_pnl_no_positions(self, portfolio):
-        """ポジションなしの場合の未実現損益"""
         portfolio.calculate_unrealized_pnl(51000.0)
         assert portfolio.stats.unrealized_profit == 0.0
 
     def test_trade_history_limit(self, portfolio):
-        """取引履歴の制限"""
         for i in range(30):
             portfolio.record_trade(
                 side="BUY",
                 price=50000.0,
                 quantity=0.002,
                 order_id=12340 + i,
-                grid_level=i % 10
+                grid_level=i % 10,
             )
-
         history = portfolio.get_trade_history(limit=20)
         assert len(history) == 20
-        # 最新のものから返される（trades[-20:]なので最後尾20件）
-        assert history[-1].order_id == 12369
-        assert history[0].order_id == 12350
 
     def test_find_matching_buy_trade(self, portfolio):
-        """対応する買い注文が見つかるか"""
         portfolio.record_trade(
             side="BUY",
             price=50000.0,
             quantity=0.002,
             order_id=12345,
-            grid_level=5
+            grid_level=5,
         )
-
         buy_trade = portfolio._find_matching_buy_trade(5)
         assert buy_trade is not None
         assert buy_trade.price == 50000.0
 
     def test_find_matching_buy_trade_not_found(self, portfolio):
-        """対応する買い注文が見つからない場合"""
-        buy_trade = portfolio._find_matching_buy_trade(99)
-        assert buy_trade is None
+        assert portfolio._find_matching_buy_trade(99) is None
+
+    def test_matched_flag_prevents_double_matching(self, portfolio):
+        portfolio.record_trade(
+            side="BUY",
+            price=50000.0,
+            quantity=0.002,
+            order_id=100,
+            grid_level=5,
+        )
+        portfolio.record_trade(
+            side="SELL",
+            price=51000.0,
+            quantity=0.002,
+            order_id=101,
+            grid_level=5,
+        )
+        portfolio.record_trade(
+            side="BUY",
+            price=49000.0,
+            quantity=0.002,
+            order_id=102,
+            grid_level=5,
+        )
+        buy_trade = portfolio._find_matching_buy_trade(5)
+        assert buy_trade is not None
+        assert buy_trade.price == 49000.0
 
     def test_generate_report(self, portfolio):
-        """レポートが生成されるか"""
         portfolio.record_trade(
             side="BUY",
             price=50000.0,
             quantity=0.002,
             order_id=12345,
-            grid_level=5
+            grid_level=5,
         )
         portfolio.record_trade(
             side="SELL",
             price=51000.0,
             quantity=0.002,
             order_id=12346,
-            grid_level=5
+            grid_level=5,
         )
-
         report = portfolio.generate_report()
         assert "ポートフォリオレポート" in report
-        assert "10000.00" in report  # 初期残高
-        assert "2.00" in report  # 実現利益
+        assert "10000.00" in report

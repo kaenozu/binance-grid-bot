@@ -40,9 +40,9 @@ def main():
     print(f"  投資額: {investment} USDT")
     print()
     
-    # K線データ取得（1時間足、500件 = 約20日分）
+    # K線データ取得（1時間足、720件 = 約30日分）
     print("K線データ取得中...")
-    klines = BacktestDataFetcher.fetch_klines(symbol, interval="1h", limit=500)
+    klines = BacktestDataFetcher.fetch_klines(symbol, interval="1h", limit=720)
     
     if not klines:
         print("エラー: K線データの取得に失敗しました")

@@ -8,6 +8,21 @@
 import pytest
 from unittest.mock import MagicMock, patch
 
+from src.grid_strategy import GridStrategy
+
+
+@pytest.fixture
+def grid_strategy():
+    """テスト用グリッド戦略"""
+    return GridStrategy(
+        symbol="BTCUSDT",
+        current_price=50000.0,
+        lower_price=45000.0,
+        upper_price=55000.0,
+        grid_count=10,
+        investment_amount=1000.0,
+    )
+
 
 @pytest.fixture
 def mock_settings():
@@ -47,5 +62,16 @@ def mock_binance_client():
     client.get_account_balance.return_value = {
         "USDT": {"free": 10000.0, "locked": 0.0},
         "BTC": {"free": 0.0, "locked": 0.0},
+    }
+    return client
+
+
+@pytest.fixture
+def mock_client_for_portfolio():
+    """Portfolioテスト用モッククライアント"""
+    client = MagicMock()
+    client.get_account_balance.return_value = {
+        "USDT": {"free": 10000.0, "locked": 0.0},
+        "BTC": {"free": 0.002, "locked": 0.0},
     }
     return client
