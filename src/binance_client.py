@@ -123,10 +123,20 @@ class BinanceClient:
                 response.raise_for_status()
                 return response.json()
             except requests.exceptions.ConnectionError as e:
-                wait_time = min(RETRY_DELAY * (2 ** min(attempt_conn, 5)), 60)
-                logger.warning(
-                    f"接続エラー（443等）、{wait_time}秒後にリトライ ({attempt_conn}回目): {e}"
-                )
+                # DNS解決失敗（ネットワーク断）は再接続見込みが低い → 300秒wait
+                # 接続エラー（応答なし等）は指数バックオフ
+                cause = e.args[0] if e.args else ""
+                is_dns_failure = "NameResolutionError" in cause or "getaddrinfo failed" in cause
+                if is_dns_failure:
+                    wait_time = 60
+                    logger.warning(
+                        f"DNS解決失敗（接続エラー）、{wait_time}秒後にリトライ ({attempt_conn}回目): {e}"
+                    )
+                else:
+                    wait_time = min(RETRY_DELAY * (2 ** min(attempt_conn, 5)), 60)
+                    logger.warning(
+                        f"接続エラー、{wait_time}秒後にリトライ ({attempt_conn}回目): {e}"
+                    )
                 time.sleep(wait_time)
                 continue
             except requests.exceptions.HTTPError as e:
