@@ -15,7 +15,4 @@ COPY --chown=botuser:botuser . .
 USER botuser
 ENV PATH=/home/botuser/.local/bin:$PATH
 
-HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
-  CMD python -c "import requests; requests.get('http://localhost:8080/health', timeout=5)" || exit 1
-
 CMD ["python", "main.py"]

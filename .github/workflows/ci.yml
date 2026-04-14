@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
-    branches: [main]
+    branches: [master]
 
 jobs:
   lint:
@@ -25,7 +25,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install pyright
-      - run: pyright --level basic src/ || true
+      - run: pyright --level basic src/
 
   test:
     runs-on: ubuntu-latest
@@ -35,5 +35,5 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r requirements.txt
-      - run: pip install pytest-cov
+      - run: pip install -r requirements-dev.txt
       - run: python -m pytest tests/ -v --cov=src --cov-report=term-missing
