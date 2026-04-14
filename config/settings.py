@@ -46,6 +46,8 @@ class Settings:
     STATUS_DISPLAY_INTERVAL: int = int(os.getenv("STATUS_DISPLAY_INTERVAL", "60"))
     MAX_CONSECUTIVE_ERRORS: int = int(os.getenv("MAX_CONSECUTIVE_ERRORS", "5"))
     GRID_RANGE_FACTOR: float = float(os.getenv("GRID_RANGE_FACTOR", "0.15"))
+    TRADING_FEE_RATE: float = float(os.getenv("TRADING_FEE_RATE", "0.001"))
+    CLOSE_ON_STOP: bool = os.getenv("CLOSE_ON_STOP", "true").lower() == "true"
 
     @classmethod
     def validate(cls) -> list[str]:
@@ -55,10 +57,7 @@ class Settings:
         if not cls.BINANCE_API_KEY or cls.BINANCE_API_KEY == "your_api_key_here":
             errors.append("BINANCE_API_KEY が設定されていません")
 
-        if (
-            not cls.BINANCE_API_SECRET
-            or cls.BINANCE_API_SECRET == "your_api_secret_here"
-        ):
+        if not cls.BINANCE_API_SECRET or cls.BINANCE_API_SECRET == "your_api_secret_here":
             errors.append("BINANCE_API_SECRET が設定されていません")
 
         if cls.GRID_COUNT < 2:

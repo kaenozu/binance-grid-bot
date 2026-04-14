@@ -87,21 +87,21 @@ def main():
     klines = BacktestDataFetcher.fetch_klines(
         symbol, interval=args.kline_interval, limit=args.kline_limit
     )
-    
+
     if not klines:
         print("エラー: K線データの取得に失敗しました")
         sys.exit(1)
-    
+
     print(f"  {len(klines)}件のデータを取得")
     print(f"  期間: {klines[0]['open_time']} ~ {klines[-1]['open_time']}")
     print(f"  開始価格: ${klines[0]['close']:,.2f}")
     print(f"  終了価格: ${klines[-1]['close']:,.2f}")
     print()
-    
+
     # バックテスト実行
     print("バックテスト実行中...")
 
-    # グリッド範囲の自動設定（開始価格の±15%）
+    # グリッド範囲の自動設定（開始価格の±GRID_RANGE_FACTOR）
     start_price = klines[0]["close"]
     range_factor = Settings.GRID_RANGE_FACTOR
     lower_price = start_price * (1 - range_factor)
@@ -115,13 +115,13 @@ def main():
         upper_price=upper_price,
         stop_loss_percent=stop_loss_percent,
     )
-    
+
     report = engine.run(klines)
-    
+
     if not report:
         print("エラー: バックテストの実行に失敗しました")
         sys.exit(1)
-    
+
     # 結果表示
     print()
     print("=" * 60)
@@ -143,14 +143,16 @@ def main():
     print(f"  ROI: {report['roi_percent']:+.2f}%")
     print(f"  最大ドローダウン: {report['max_drawdown_percent']:.2f}%")
     print(f"  損切り発動: {'あり' if report['stop_loss_triggered'] else 'なし'}")
-    if report['total_trades'] > 0:
+    if report["total_trades"] > 0:
         print(f"  平均利益/取引: ${report['avg_profit_per_trade']:.2f}")
     print("=" * 60)
-    
+
     # JSONで保存
-    output_file = f"backtest_{symbol}_{report['period'].replace(' ', '_').replace(':', '')}.json"
+    output_file = (
+        f"backtest_{symbol}_{report['period'].replace(' ', '_').replace(':', '')}.json"
+    )
     try:
-        with open(output_file, 'w', encoding='utf-8') as f:
+        with open(output_file, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2, default=str)
         print(f"\n結果を {output_file} に保存しました")
     except Exception as e:

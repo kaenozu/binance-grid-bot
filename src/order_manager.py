@@ -343,22 +343,29 @@ class OrderManager:
         self, order: dict, grid_level: int, side: str, price: float, quantity: float
     ) -> None:
         """注文を登録し、約定済み処理を実行"""
+        avg_price = (
+            float(order.get("avgPrice") or order["price"])
+            if order.get("avgPrice")
+            else float(order["price"])
+        )
+        executed_qty = float(order.get("executedQty") or order["origQty"])
+
         self.register_order(
             order_id=order["orderId"],
             grid_level=grid_level,
             side=side,
-            price=float(order["price"]),
-            quantity=float(order["origQty"]),
+            price=avg_price,
+            quantity=executed_qty,
             status=order["status"],
         )
 
         if order["status"] == "FILLED":
             if side == "BUY":
                 self.strategy.mark_position_filled(grid_level, order["orderId"])
-                logger.info(f"グリッド {grid_level}: 即約定 @ {price}")
+                logger.info(f"グリッド {grid_level}: 即約定 @ {avg_price}")
             else:
                 self.strategy.mark_position_closed(grid_level, order["orderId"])
-                logger.info(f"グリッド {grid_level}: 売り即約定 @ {price}")
+                logger.info(f"グリッド {grid_level}: 売り即約定 @ {avg_price}")
         else:
             if side == "BUY":
                 self.strategy.grids[grid_level].buy_order_id = order["orderId"]
