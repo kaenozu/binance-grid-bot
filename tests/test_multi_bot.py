@@ -21,6 +21,26 @@ def _make_mock_bot(running=True):
     bot.current_price = 50000.0
     bot.strategy = MagicMock()
     bot.strategy.grids = []
+    bot.portfolio = MagicMock()
+    bot.portfolio.refresh_stats.return_value = MagicMock(
+        total_profit=0.0,
+        realized_profit=0.0,
+        unrealized_profit=0.0,
+    )
+
+    def _get_summary():
+        filled = sum(1 for g in bot.strategy.grids if g.position_filled)
+        return {
+            "running": bot.is_running,
+            "price": bot.current_price,
+            "grids": len(bot.strategy.grids),
+            "filled": filled,
+            "total_profit": bot.portfolio.refresh_stats.return_value.total_profit,
+            "realized_profit": bot.portfolio.refresh_stats.return_value.realized_profit,
+            "unrealized_profit": bot.portfolio.refresh_stats.return_value.unrealized_profit,
+        }
+
+    bot.get_summary.side_effect = _get_summary
     bot.stop = MagicMock()
     bot.start = MagicMock()
     return bot
@@ -123,6 +143,7 @@ class TestMultiBot:
                 assert status["symbols"]["BTCUSDT"]["running"] is True
                 assert status["symbols"]["BTCUSDT"]["filled"] == 1
                 assert status["symbols"]["BTCUSDT"]["grids"] == 2
+                assert "total_profit" in status["symbols"]["BTCUSDT"]
                 assert status["symbols"]["ETHUSDT"]["running"] is False
                 assert len(status["symbols"]["ETHUSDT"]["errors"]) > 0
                 assert "weight" in status

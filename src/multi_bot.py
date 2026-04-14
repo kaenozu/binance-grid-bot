@@ -100,11 +100,13 @@ class MultiBot:
         for symbol in self.symbols:
             bot = self._bots.get(symbol)
             if bot:
+                summary = bot.get_summary()
                 statuses[symbol] = {
-                    "running": bot.is_running,
-                    "price": bot.current_price,
-                    "grids": len(bot.strategy.grids),
-                    "filled": sum(1 for g in bot.strategy.grids if g.position_filled),
+                    "running": summary["running"],
+                    "price": summary["price"],
+                    "grids": summary["grids"],
+                    "filled": summary["filled"],
+                    "total_profit": summary["total_profit"],
                     "errors": self._errors.get(symbol, []),
                 }
             else:

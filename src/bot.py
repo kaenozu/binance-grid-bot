@@ -251,6 +251,19 @@ class GridBot:
 
         self._place_initial_orders()
 
+    def get_summary(self) -> dict:
+        stats = self.portfolio.refresh_stats()
+        filled = sum(1 for g in self.strategy.grids if g.position_filled)
+        return {
+            "running": self.is_running,
+            "price": self.current_price,
+            "grids": len(self.strategy.grids),
+            "filled": filled,
+            "total_profit": stats.total_profit,
+            "realized_profit": stats.realized_profit,
+            "unrealized_profit": stats.unrealized_profit,
+        }
+
     def _display_status(self):
         """ステータスをCUIに表示"""
         stats = self.portfolio.refresh_stats()
