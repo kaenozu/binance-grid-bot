@@ -255,26 +255,14 @@ def load_trades() -> list[dict]:
     ]
 
 
-STATS_FIELDS = [
-    "initial_balance",
-    "current_balance",
-    "total_profit",
-    "realized_profit",
-    "unrealized_profit",
-    "total_trades",
-    "winning_trades",
-    "losing_trades",
-    "settled_trades",
-    "win_rate",
-    "avg_profit_per_trade",
-    "total_fees",
-    "start_time",
-    "last_update",
-]
+def _get_stats_fields() -> list[str]:
+    from src.portfolio import PortfolioStats
+
+    return [f for f in PortfolioStats.__dataclass_fields__.keys()]
 
 
 def restore_stats_to(stats_obj, data: dict):
     """PortfolioStats オブジェクトにDB値を一括復元"""
-    for field in STATS_FIELDS:
+    for field in _get_stats_fields():
         if field in data:
             setattr(stats_obj, field, data[field])
