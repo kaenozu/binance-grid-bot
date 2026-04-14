@@ -94,6 +94,8 @@ def test_tick_processes_fills():
     bot.order_manager = mock_om
     bot.risk_manager = mock_rm
     bot.portfolio = mock_port
+    bot.ws_client = None
+    bot.symbol = "BTCUSDT"
     bot.is_running = True
     bot.consecutive_errors = 0
     bot._last_status_time = 0.0
@@ -130,6 +132,8 @@ def test_tick_halts_on_stop_loss():
     bot.order_manager = mock_om
     bot.risk_manager = mock_rm
     bot.portfolio = mock_port
+    bot.ws_client = None
+    bot.symbol = "BTCUSDT"
     bot.is_running = True
     bot.consecutive_errors = 0
     bot._last_status_time = 0.0
@@ -138,3 +142,50 @@ def test_tick_halts_on_stop_loss():
     bot._tick()
     assert bot.is_running is False
     mock_om.cancel_all_orders.assert_called_once()
+
+
+def test_handle_grid_shift_preserves_filled_positions():
+    strategy = GridStrategy(
+        symbol="BTCUSDT",
+        current_price=50000.0,
+        lower_price=45000.0,
+        upper_price=55000.0,
+        grid_count=10,
+        investment_amount=1000.0,
+    )
+
+    for i in [0, 1, 2]:
+        strategy.grids[i].position_filled = True
+
+    mock_client = MagicMock()
+    mock_client.get_symbol_price.return_value = 70000.0
+    mock_client.get_symbol_info.return_value = {
+        "symbol": "BTCUSDT",
+        "base_asset": "BTC",
+        "min_qty": 0.00001,
+        "step_size": 0.00001,
+        "tick_size": 0.01,
+    }
+
+    mock_om = MagicMock()
+    mock_om.cancel_all_orders.return_value = 0
+    mock_om.place_grid_orders.return_value = MagicMock(placed=0)
+
+    from src.bot import GridBot
+
+    bot = GridBot.__new__(GridBot)
+    bot.client = mock_client
+    bot.strategy = strategy
+    bot.order_manager = mock_om
+    bot.ws_client = None
+    bot.symbol = "BTCUSDT"
+    bot.current_price = 70000.0
+
+    bot._handle_grid_shift()
+
+    filled_after = [g for g in bot.strategy.grids if g.position_filled]
+    assert len(filled_after) == 3
+    for i in range(3):
+        assert bot.strategy.grids[i].position_filled is True
+    for i in range(3, len(bot.strategy.grids)):
+        assert bot.strategy.grids[i].position_filled is False

@@ -15,6 +15,7 @@ from urllib3.util.retry import Retry
 import requests
 from requests.adapters import HTTPAdapter
 from config.settings import Settings
+from src.api_weight import APIWeightTracker
 from utils.logger import setup_logger
 
 logger = setup_logger("binance_client")
@@ -36,11 +37,12 @@ class BinanceClient:
     TESTNET_BASE_URL = "https://testnet.binance.vision"
     MAINNET_BASE_URL = "https://api.binance.com"
 
-    def __init__(self):
+    def __init__(self, weight_tracker: APIWeightTracker | None = None):
         self.base_url = self.TESTNET_BASE_URL if Settings.USE_TESTNET else self.MAINNET_BASE_URL
         self.api_key = Settings.BINANCE_API_KEY
         self.api_secret = Settings.BINANCE_API_SECRET
         self._symbol_cache: dict[str, tuple[dict, float]] = {}
+        self._weight_tracker = weight_tracker
 
         self.session = requests.Session()
         self.session.headers.update(
@@ -105,6 +107,9 @@ class BinanceClient:
             query_string = urlencode(params)
             params["signature"] = self._generate_signature(query_string)
 
+        if self._weight_tracker:
+            self._weight_tracker.wait_if_needed()
+
         # --- 接続エラー（443等）は無制限リトライ ---
         attempt_conn = 0
         while True:
@@ -128,6 +133,10 @@ class BinanceClient:
                     time.sleep(wait_time)
                     continue
                 response.raise_for_status()
+                if self._weight_tracker:
+                    used = response.headers.get("X-MBX-USED-WEIGHT")
+                    if used:
+                        self._weight_tracker.update_weight(int(used))
                 return response.json()
             except requests.exceptions.ConnectionError as e:
                 # DNS解決失敗（ネットワーク断）は再接続見込みが低い → 300秒wait

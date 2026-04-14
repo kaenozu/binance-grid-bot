@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from config.settings import Settings
+from src.api_weight import APIWeightTracker
 from src.binance_client import BinanceClient
 from src.grid_strategy import GridStrategy
 from src.order_manager import OrderManager
@@ -20,6 +21,7 @@ from src.portfolio import Portfolio
 from src import persistence
 from src import order_sync
 from src import exporter
+from src.ws_client import BinanceWebSocketClient
 from utils.logger import setup_logger
 
 logger = setup_logger("bot")
@@ -28,20 +30,28 @@ logger = setup_logger("bot")
 class GridBot:
     """グリッド取引ボット"""
 
-    def __init__(self):
+    def __init__(
+        self,
+        symbol: str | None = None,
+        ws_client: BinanceWebSocketClient | None = None,
+        weight_tracker: APIWeightTracker | None = None,
+    ):
         errors = Settings.validate()
         if errors:
             for error in errors:
                 logger.error(f"設定エラー: {error}")
             raise ValueError(f"設定エラーがあります: {errors}")
 
-        self.client = BinanceClient()
+        self.symbol = symbol or Settings.TRADING_SYMBOL
+        self.ws_client = ws_client
 
-        self.current_price = self.client.get_symbol_price(Settings.TRADING_SYMBOL)
+        self.client = BinanceClient(weight_tracker=weight_tracker)
+
+        self.current_price = self.client.get_symbol_price(self.symbol)
         logger.info(f"現在価格: {self.current_price:.2f}")
 
         self.strategy = GridStrategy(
-            symbol=Settings.TRADING_SYMBOL,
+            symbol=self.symbol,
             current_price=self.current_price,
             lower_price=Settings.LOWER_PRICE,
             upper_price=Settings.UPPER_PRICE,
@@ -51,9 +61,7 @@ class GridBot:
 
         self.order_manager = OrderManager(self.client, self.strategy)
         self.risk_manager = RiskManager(self.client, self.strategy, self.current_price)
-        self.portfolio = Portfolio(
-            self.client, Settings.TRADING_SYMBOL, fee_rate=Settings.TRADING_FEE_RATE
-        )
+        self.portfolio = Portfolio(self.client, self.symbol, fee_rate=Settings.TRADING_FEE_RATE)
 
         self.is_running = False
         self.consecutive_errors = 0
@@ -67,7 +75,7 @@ class GridBot:
 
     def _restore_state(self):
         """永続化された状態を復元"""
-        grid_states = persistence.load_grid_states(Settings.TRADING_SYMBOL)
+        grid_states = persistence.load_grid_states(self.symbol)
         if grid_states:
             for gs in grid_states:
                 level = gs["level"]
@@ -96,7 +104,7 @@ class GridBot:
     def _persist_state(self):
         """現在の状態を永続化"""
         try:
-            persistence.save_grid_states(Settings.TRADING_SYMBOL, self.strategy.grids)
+            persistence.save_grid_states(self.symbol, self.strategy.grids)
             persistence.save_portfolio_stats(self.portfolio.stats)
         except Exception as e:
             logger.error(f"状態永続化失敗: {e}")
@@ -109,6 +117,9 @@ class GridBot:
 
         self.is_running = True
         self._last_status_time = time.time()
+
+        if self.ws_client:
+            self.ws_client.start_price_stream(self.symbol)
 
         self._place_initial_orders()
 
@@ -156,7 +167,11 @@ class GridBot:
     def _tick(self) -> None:
         """1 ティック処理"""
         try:
-            self.current_price = self.client.get_symbol_price(Settings.TRADING_SYMBOL)
+            ws_price = self.ws_client.current_price if self.ws_client else None
+            if ws_price is not None:
+                self.current_price = ws_price
+            else:
+                self.current_price = self.client.get_symbol_price(self.symbol)
             self.strategy.update_current_price(self.current_price)
 
             if self.risk_manager.should_halt_trading(self.current_price):
@@ -226,23 +241,15 @@ class GridBot:
     def _handle_grid_shift(self):
         """価格がグリッド範囲外の場合、グリッドを再計算して注文を再配置"""
         logger.warning(f"価格 {self.current_price:.2f} がグリッド範囲外。動的シフトを実行します。")
+        filled_count = sum(1 for g in self.strategy.grids if g.position_filled)
+
         self.order_manager.cancel_all_orders()
         self.strategy.shift_grids()
-        for grid in self.strategy.grids:
-            grid.buy_order_id = None
-            grid.sell_order_id = None
 
-        symbol_info = self._place_initial_orders()
+        for i in range(min(filled_count, len(self.strategy.grids))):
+            self.strategy.grids[i].position_filled = True
 
-        open_positions = [g for g in self.strategy.grids if g.position_filled and g.sell_price]
-        for grid in open_positions:
-            qty = self.strategy.get_order_quantity(
-                grid.buy_price,
-                symbol_info["min_qty"] if symbol_info else 0,
-                symbol_info["step_size"] if symbol_info else 0,
-            )
-            if qty > 0:
-                self._place_sell_for_grid(grid.level, qty)
+        self._place_initial_orders()
 
     def _display_status(self):
         """ステータスをCUIに表示"""
@@ -253,7 +260,7 @@ class GridBot:
         print("\n" + "=" * 70)
         print(f"グリッドボット ステータス - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print("=" * 70)
-        print(f"取引ペア: {Settings.TRADING_SYMBOL}")
+        print(f"取引ペア: {self.symbol}")
         print(f"現在価格: {self.current_price:.2f}")
         print(f"価格範囲: {grid_status['price_range']}")
         print(f"グリッド数: {grid_status['total_grids']} (間隔: {grid_status['grid_spacing']:.2f})")
@@ -362,6 +369,9 @@ class GridBot:
         """ボット停止"""
         logger.info("ボット停止中...")
         self.is_running = False
+
+        if self.ws_client:
+            self.ws_client.stop()
 
         self._persist_state()
 

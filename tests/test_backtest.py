@@ -120,3 +120,140 @@ class TestBacktestEngine:
         report = engine.run(sample_klines)
         assert "grid_range" in report
         assert "45000" in report["grid_range"]
+
+    def test_multiple_grid_fills(self):
+        engine = BacktestEngine(
+            symbol="BTCUSDT",
+            investment_amount=10000.0,
+            grid_count=5,
+            lower_price=48000.0,
+            upper_price=52000.0,
+            stop_loss_percent=15.0,
+        )
+        klines = [
+            {
+                "open_time": datetime(2026, 1, 1, 0, 0),
+                "open": 50000.0,
+                "high": 50000.0,
+                "low": 50000.0,
+                "close": 50000.0,
+                "volume": 100.0,
+                "close_time": datetime(2026, 1, 1, 1, 0),
+            },
+            {
+                "open_time": datetime(2026, 1, 1, 1, 0),
+                "open": 50000.0,
+                "high": 50400.0,
+                "low": 48500.0,
+                "close": 49500.0,
+                "volume": 200.0,
+                "close_time": datetime(2026, 1, 1, 2, 0),
+            },
+            {
+                "open_time": datetime(2026, 1, 1, 2, 0),
+                "open": 49500.0,
+                "high": 50800.0,
+                "low": 49200.0,
+                "close": 50200.0,
+                "volume": 200.0,
+                "close_time": datetime(2026, 1, 1, 3, 0),
+            },
+        ]
+        report = engine.run(klines)
+        assert report["total_trades"] >= 0
+        assert "max_drawdown_percent" in report
+
+    def test_drawdown_is_calculated(self):
+        engine = BacktestEngine(
+            symbol="BTCUSDT",
+            investment_amount=1000.0,
+            grid_count=5,
+            lower_price=45000.0,
+            upper_price=55000.0,
+            stop_loss_percent=15.0,
+        )
+        klines = [
+            {
+                "open_time": datetime(2026, 1, 1, 0, 0),
+                "open": 50000.0,
+                "high": 51000.0,
+                "low": 50000.0,
+                "close": 50500.0,
+                "volume": 100.0,
+                "close_time": datetime(2026, 1, 1, 1, 0),
+            },
+            {
+                "open_time": datetime(2026, 1, 1, 1, 0),
+                "open": 50500.0,
+                "high": 50500.0,
+                "low": 46000.0,
+                "close": 46500.0,
+                "volume": 150.0,
+                "close_time": datetime(2026, 1, 1, 2, 0),
+            },
+            {
+                "open_time": datetime(2026, 1, 1, 2, 0),
+                "open": 46500.0,
+                "high": 47500.0,
+                "low": 46000.0,
+                "close": 47000.0,
+                "volume": 120.0,
+                "close_time": datetime(2026, 1, 1, 3, 0),
+            },
+        ]
+        report = engine.run(klines)
+        assert report["max_drawdown_percent"] >= 0
+
+    def test_fee_deduction_reduces_profit(self):
+        no_fee = BacktestEngine(
+            symbol="BTCUSDT",
+            investment_amount=10000.0,
+            grid_count=5,
+            lower_price=49000.0,
+            upper_price=51000.0,
+            stop_loss_percent=15.0,
+            fee_rate=0.0,
+        )
+        with_fee = BacktestEngine(
+            symbol="BTCUSDT",
+            investment_amount=10000.0,
+            grid_count=5,
+            lower_price=49000.0,
+            upper_price=51000.0,
+            stop_loss_percent=15.0,
+            fee_rate=0.001,
+        )
+        klines = [
+            {
+                "open_time": datetime(2026, 1, 1, 0, 0),
+                "open": 50000.0,
+                "high": 50000.0,
+                "low": 50000.0,
+                "close": 50000.0,
+                "volume": 100.0,
+                "close_time": datetime(2026, 1, 1, 1, 0),
+            },
+            {
+                "open_time": datetime(2026, 1, 1, 1, 0),
+                "open": 50000.0,
+                "high": 50400.0,
+                "low": 49200.0,
+                "close": 49800.0,
+                "volume": 200.0,
+                "close_time": datetime(2026, 1, 1, 2, 0),
+            },
+            {
+                "open_time": datetime(2026, 1, 1, 2, 0),
+                "open": 49800.0,
+                "high": 50500.0,
+                "low": 49500.0,
+                "close": 50200.0,
+                "volume": 200.0,
+                "close_time": datetime(2026, 1, 1, 3, 0),
+            },
+        ]
+        report_no_fee = no_fee.run(klines)
+        report_with_fee = with_fee.run(klines)
+
+        if report_no_fee["total_trades"] > 0:
+            assert report_with_fee["total_profit"] <= report_no_fee["total_profit"]

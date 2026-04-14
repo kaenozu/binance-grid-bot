@@ -18,6 +18,8 @@ from src.persistence import (
     save_portfolio_stats,
     load_grid_states,
     load_portfolio_stats,
+    load_trades,
+    restore_stats_to,
 )
 
 
@@ -118,3 +120,115 @@ def test_db_file_created():
         0,
     )
     assert persist.DB_PATH.exists()
+
+
+def test_load_trades():
+    save_trade(
+        timestamp=datetime(2026, 1, 1, 10, 0, 0),
+        symbol="BTCUSDT",
+        side="BUY",
+        price=50000.0,
+        quantity=0.001,
+        order_id=1,
+        grid_level=0,
+        profit=0.0,
+    )
+    save_trade(
+        timestamp=datetime(2026, 1, 1, 11, 0, 0),
+        symbol="ETHUSDT",
+        side="SELL",
+        price=3000.0,
+        quantity=0.1,
+        order_id=2,
+        grid_level=1,
+        profit=5.0,
+    )
+
+    trades = load_trades()
+    assert len(trades) == 2
+    assert trades[0]["side"] == "BUY"
+    assert trades[1]["side"] == "SELL"
+    assert trades[1]["profit"] == 5.0
+
+
+def test_save_grid_states_overwrites():
+    from types import SimpleNamespace
+
+    grids_v1 = [
+        SimpleNamespace(
+            level=0,
+            buy_price=45000.0,
+            sell_price=46000.0,
+            buy_order_id=1,
+            sell_order_id=None,
+            position_filled=True,
+        ),
+    ]
+    save_grid_states("BTCUSDT", grids_v1)
+
+    grids_v2 = [
+        SimpleNamespace(
+            level=0,
+            buy_price=48000.0,
+            sell_price=49000.0,
+            buy_order_id=2,
+            sell_order_id=None,
+            position_filled=False,
+        ),
+    ]
+    save_grid_states("BTCUSDT", grids_v2)
+
+    loaded = load_grid_states("BTCUSDT")
+    assert len(loaded) == 1
+    assert loaded[0]["buy_price"] == 48000.0
+    assert loaded[0]["position_filled"] is False
+
+
+def test_multiple_symbols_independent():
+    from types import SimpleNamespace
+
+    grids_btc = [
+        SimpleNamespace(
+            level=0,
+            buy_price=45000.0,
+            sell_price=46000.0,
+            buy_order_id=1,
+            sell_order_id=None,
+            position_filled=True,
+        ),
+    ]
+    grids_eth = [
+        SimpleNamespace(
+            level=0,
+            buy_price=3000.0,
+            sell_price=3100.0,
+            buy_order_id=2,
+            sell_order_id=None,
+            position_filled=False,
+        ),
+    ]
+    save_grid_states("BTCUSDT", grids_btc)
+    save_grid_states("ETHUSDT", grids_eth)
+
+    loaded_btc = load_grid_states("BTCUSDT")
+    loaded_eth = load_grid_states("ETHUSDT")
+
+    assert loaded_btc[0]["buy_price"] == 45000.0
+    assert loaded_btc[0]["position_filled"] is True
+    assert loaded_eth[0]["buy_price"] == 3000.0
+    assert loaded_eth[0]["position_filled"] is False
+
+
+def test_restore_stats_to():
+    from src.portfolio import PortfolioStats
+
+    stats = PortfolioStats()
+    data = {
+        "initial_balance": 500.0,
+        "total_trades": 10,
+        "realized_profit": 25.0,
+    }
+    restore_stats_to(stats, data)
+    assert stats.initial_balance == 500.0
+    assert stats.total_trades == 10
+    assert stats.realized_profit == 25.0
