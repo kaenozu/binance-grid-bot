@@ -55,21 +55,17 @@ class APIWeightTracker:
         return self.available_weight <= 0
 
     def wait_if_needed(self):
-        """必要に応じてウェイトリセットまで待機"""
-        if not self.should_wait():
-            return
-
         with self._condition:
+            if self.max_weight - self._current_weight - self.weight_buffer > 0:
+                return
             elapsed = time.time() - self._last_reset
             reset_in = max(0, self.window_seconds - elapsed)
-
             if reset_in > 0:
                 logger.warning(
                     f"APIウェイト不足 (残り {self._current_weight}/{self.max_weight})。"
                     f"{reset_in}秒後にリセットされます。待機中..."
                 )
                 self._condition.wait(timeout=reset_in + 1)
-
             self._current_weight = 0
             self._last_reset = time.time()
             logger.info("APIウェイトリセット完了")

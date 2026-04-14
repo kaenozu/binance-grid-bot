@@ -103,20 +103,23 @@ class BinanceClient:
         url = f"{self.base_url}{endpoint}"
         params = dict(params) if params else {}
 
-        if signed:
-            params["timestamp"] = int(time.time() * 1000)
-            query_string = urlencode(params)
-            params["signature"] = self._generate_signature(query_string)
-
         if self._weight_tracker:
             self._weight_tracker.wait_if_needed()
 
         attempt = 0
         while True:
             attempt += 1
+            if signed:
+                params["timestamp"] = int(time.time() * 1000)
+                query_string = urlencode(params)
+                params["signature"] = self._generate_signature(query_string)
             try:
                 response = self._send_request(method, url, params)
                 if response.status_code == 429:
+                    if attempt >= MAX_CONNECTION_RETRIES:
+                        raise BinanceAPIError(
+                            f"レートリミット（{MAX_CONNECTION_RETRIES}回リトライ後）"
+                        )
                     retry_after = int(
                         response.headers.get("Retry-After", RETRY_DELAY * (2**attempt))
                     )
@@ -126,6 +129,11 @@ class BinanceClient:
                     time.sleep(retry_after)
                     continue
                 if response.status_code >= 500:
+                    if attempt >= MAX_CONNECTION_RETRIES:
+                        raise BinanceAPIError(
+                            f"サーバーエラー ({response.status_code}) "
+                            f"（{MAX_CONNECTION_RETRIES}回リトライ後）"
+                        )
                     wait_time = RETRY_DELAY * (2 ** min(attempt, 5))
                     logger.warning(
                         f"サーバーエラー ({response.status_code})、"

@@ -178,7 +178,17 @@ class OrderManager:
 
         stale_filled = [oid for oid, info in self._active_orders.items() if info.status == "FILLED"]
         for oid in stale_filled:
-            self._active_orders.pop(oid, None)
+            info = self._active_orders.pop(oid, None)
+            if info is not None:
+                new_fills.append(
+                    FillEvent(
+                        grid=info.grid_level,
+                        side=info.side,
+                        price=info.price,
+                        quantity=info.quantity,
+                        order_id=oid,
+                    )
+                )
         if stale_filled:
             logger.info(f"残留約定済み注文クリーンアップ: {len(stale_filled)} 件")
 
@@ -246,8 +256,9 @@ class OrderManager:
         """特定グリッドレベルの買い注文を配置（決済後の再注文）"""
         try:
             grid = self.strategy.grids[grid_level]
-            grid.position_filled = False
             result = self._place_order(grid_level, "BUY", grid.buy_price)
+            if result is not None:
+                grid.position_filled = False
             return result is not None
 
         except Exception as e:
@@ -299,6 +310,7 @@ class OrderManager:
         if order["status"] == "FILLED":
             if side == "BUY":
                 self.strategy.mark_position_filled(grid_level, order["orderId"])
+                self.strategy.grids[grid_level].filled_quantity = executed_qty
                 logger.info(f"グリッド {grid_level}: 即約定 @ {avg_price}")
             else:
                 self.strategy.mark_position_closed(grid_level, order["orderId"])

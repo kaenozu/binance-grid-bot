@@ -12,11 +12,14 @@ from config.settings import Settings, _safe_float
 class TestSafeFloat:
     """_safe_float のテスト"""
 
-    def test_none_returns_none(self):
-        assert _safe_float(None) is None
+    def test_none_returns_default(self):
+        assert _safe_float(None) == 0.0
 
-    def test_empty_string_returns_none(self):
-        assert _safe_float("") is None
+    def test_none_returns_custom_default(self):
+        assert _safe_float(None, default=42.0) == 42.0
+
+    def test_empty_string_returns_default(self):
+        assert _safe_float("") == 0.0
 
     def test_valid_float(self):
         assert _safe_float("50000.5") == 50000.5
@@ -24,8 +27,8 @@ class TestSafeFloat:
     def test_integer_string(self):
         assert _safe_float("100") == 100.0
 
-    def test_invalid_string_returns_none(self):
-        assert _safe_float("abc") is None
+    def test_invalid_string_returns_default(self):
+        assert _safe_float("abc") == 0.0
 
 
 class TestSettingsValidation:

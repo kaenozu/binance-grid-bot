@@ -25,6 +25,7 @@ class GridLevel:
     buy_order_id: Optional[int] = None
     sell_order_id: Optional[int] = None
     position_filled: bool = False
+    filled_quantity: Optional[float] = None
 
 
 class GridStrategy:

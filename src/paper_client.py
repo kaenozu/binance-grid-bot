@@ -66,39 +66,91 @@ class PaperClient:
     ) -> dict:
         self._order_counter += 1
         order_id = self._order_counter
+
+        if price is None:
+            market_price = self.get_symbol_price(symbol)
+            fill_price = market_price
+            status = "FILLED"
+        else:
+            fill_price = price
+            status = "NEW"
+
         order = {
             "orderId": order_id,
             "symbol": symbol,
             "side": side,
             "type": "LIMIT" if price else "MARKET",
-            "price": f"{price:.8f}" if price else "0",
+            "price": f"{fill_price:.8f}",
             "origQty": f"{quantity:.8f}",
-            "executedQty": f"{quantity:.8f}",
-            "status": "NEW",
-            "avgPrice": f"{price:.8f}" if price else "0",
+            "executedQty": f"{quantity:.8f}" if status == "FILLED" else "0",
+            "status": status,
+            "avgPrice": f"{fill_price:.8f}" if status == "FILLED" else "0",
         }
 
-        if price is None:
-            order["status"] = "FILLED"
-            order["avgPrice"] = order["price"]
+        if status == "FILLED":
+            base = symbol.replace("USDT", "") if "USDT" in symbol else "BTC"
+            quote = "USDT"
+            if side == "BUY":
+                cost = fill_price * quantity
+                if quote in self._balances and self._balances[quote]["free"] >= cost:
+                    self._balances[quote]["free"] -= cost
+                    if base in self._balances:
+                        self._balances[base]["free"] += quantity
+                order["executedQty"] = f"{quantity:.8f}"
+            elif side == "SELL":
+                if base in self._balances and self._balances[base]["free"] >= quantity:
+                    self._balances[base]["free"] -= quantity
+                    proceeds = fill_price * quantity
+                    if quote in self._balances:
+                        self._balances[quote]["free"] += proceeds
+                order["executedQty"] = f"{quantity:.8f}"
 
         self._orders.append(order)
-
-        if side == "BUY":
-            quote = symbol.replace("USDT", "") if "USDT" in symbol else "BTC"
-            if quote in self._balances:
-                self._balances[quote]["free"] += quantity
-
         return order
 
     def cancel_order(self, symbol: str, order_id: int) -> dict:
+        for o in self._orders:
+            if o["orderId"] == order_id:
+                o["status"] = "CANCELED"
+                return {"orderId": order_id, "status": "CANCELED"}
         return {"orderId": order_id, "status": "CANCELED"}
 
     def get_open_orders(self, symbol: Optional[str] = None) -> list[dict]:
-        return [o for o in self._orders if o["status"] == "NEW"]
+        orders = [o for o in self._orders if o["status"] == "NEW"]
+        if symbol is not None:
+            orders = [o for o in orders if o["symbol"] == symbol]
+        return orders
 
     def get_order(self, symbol: str, order_id: int) -> dict:
         for o in self._orders:
             if o["orderId"] == order_id:
+                if o["status"] == "NEW" and o["price"] != "0":
+                    try:
+                        current = self.get_symbol_price(symbol)
+                        limit_price = float(o["price"])
+                        filled = (o["side"] == "BUY" and current <= limit_price) or (
+                            o["side"] == "SELL" and current >= limit_price
+                        )
+                        if filled:
+                            qty = float(o["origQty"])
+                            o["status"] = "FILLED"
+                            o["avgPrice"] = o["price"]
+                            o["executedQty"] = o["origQty"]
+                            base = symbol.replace("USDT", "") if "USDT" in symbol else "BTC"
+                            quote = "USDT"
+                            if o["side"] == "BUY":
+                                cost = limit_price * qty
+                                if quote in self._balances:
+                                    self._balances[quote]["free"] -= cost
+                                if base in self._balances:
+                                    self._balances[base]["free"] += qty
+                            elif o["side"] == "SELL":
+                                if base in self._balances:
+                                    self._balances[base]["free"] -= qty
+                                proceeds = limit_price * qty
+                                if quote in self._balances:
+                                    self._balances[quote]["free"] += proceeds
+                    except Exception:
+                        pass
                 return o
         raise BinanceAPIError(f"注文が見つかりません: {order_id}")

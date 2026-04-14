@@ -29,6 +29,7 @@ class BinanceWebSocketClient:
         self._current_price: Optional[float] = None
         self._price_lock = threading.Lock()
         self._symbol: Optional[str] = None
+        self._reconnect_delay = 1
 
     @property
     def current_price(self) -> Optional[float]:
@@ -60,9 +61,11 @@ class BinanceWebSocketClient:
                     logger.error(f"WebSocket エラー: {e}")
                 finally:
                     self._ws = None
+                    self._reconnect_delay = 1
                 if self._running:
                     logger.info("WebSocket 再接続中...")
-                    time.sleep(3)
+                    time.sleep(self._reconnect_delay)
+                    self._reconnect_delay = min(self._reconnect_delay * 2, 60)
 
         self._thread = threading.Thread(target=_run, daemon=True)
         self._thread.start()

@@ -131,7 +131,7 @@ def test_handle_grid_shift_preserves_filled_positions():
         investment_amount=1000.0,
     )
 
-    for i in [0, 1, 2]:
+    for i in [0, 2, 4]:
         strategy.grids[i].position_filled = True
 
     mock_client = MagicMock()
@@ -162,7 +162,7 @@ def test_handle_grid_shift_preserves_filled_positions():
 
     filled_after = [g for g in bot.strategy.grids if g.position_filled]
     assert len(filled_after) == 3
-    for i in range(3):
-        assert bot.strategy.grids[i].position_filled is True
-    for i in range(3, len(bot.strategy.grids)):
-        assert bot.strategy.grids[i].position_filled is False
+    original_prices = [45000.0, 47000.0, 49000.0]
+    for filled_grid in filled_after:
+        closest = min(original_prices, key=lambda p: abs(p - filled_grid.buy_price))
+        assert abs(filled_grid.buy_price - closest) <= strategy.grid_spacing

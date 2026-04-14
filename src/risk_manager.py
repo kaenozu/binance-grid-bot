@@ -5,6 +5,8 @@
 関連ファイル: src/binance_client.py, src/grid_strategy.py, src/portfolio.py
 """
 
+import threading
+
 from config.settings import Settings
 from src.binance_client import BinanceClient
 from src.grid_strategy import GridStrategy
@@ -39,6 +41,8 @@ class RiskManager:
         self.max_positions = Settings.MAX_POSITIONS
         self.current_positions = 0
 
+        self._lock = threading.Lock()
+
         logger.info(
             f"リスク管理初期化: 損切り={self.stop_loss_price:.2f}, "
             f"最大ポジション={self.max_positions}"
@@ -62,41 +66,36 @@ class RiskManager:
         return False
 
     def can_open_position(self) -> bool:
-        """新規ポジション可能かチェック
-
-        Returns:
-            True: 可能、False: 不可
-        """
-        if self.current_positions >= self.max_positions:
-            logger.warning(f"最大ポジション数到達: {self.current_positions}/{self.max_positions}")
-            return False
-        return True
+        with self._lock:
+            if self.current_positions >= self.max_positions:
+                logger.warning(
+                    f"最大ポジション数到達: {self.current_positions}/{self.max_positions}"
+                )
+                return False
+            return True
 
     def record_position_open(self):
-        """ポジション開設を記録"""
-        self.current_positions += 1
+        with self._lock:
+            self.current_positions += 1
         logger.info(f"ポジション開設: {self.current_positions}/{self.max_positions}")
 
     def record_position_close(self, profit: float = 0.0):
-        """ポジション決済を記録
-
-        Args:
-            profit: 利益（損失の場合は負の値）
-        """
-        if self.current_positions > 0:
-            self.current_positions -= 1
-
+        with self._lock:
+            if self.current_positions > 0:
+                self.current_positions -= 1
+            else:
+                logger.warning("ポジション決済警告: current_positions が既に 0 です")
         logger.info(f"ポジション決済: 利益={profit:.2f}")
 
     @property
     def risk_status(self) -> dict:
-        """リスクステータスを返す"""
-        return {
-            "stop_loss_price": self.stop_loss_price,
-            "current_positions": self.current_positions,
-            "max_positions": self.max_positions,
-            "stop_loss_percentage": Settings.STOP_LOSS_PERCENTAGE,
-        }
+        with self._lock:
+            return {
+                "stop_loss_price": self.stop_loss_price,
+                "current_positions": self.current_positions,
+                "max_positions": self.max_positions,
+                "stop_loss_percentage": Settings.STOP_LOSS_PERCENTAGE,
+            }
 
     def should_halt_trading(self, current_price: float) -> bool:
         """取引停止すべきか判断
