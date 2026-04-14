@@ -21,6 +21,7 @@ from utils.logger import setup_logger
 logger = setup_logger("binance_client")
 
 RETRY_DELAY = 1
+MAX_CONNECTION_RETRIES = 10
 SYMBOL_CACHE_TTL = 300  # シンボル情報のキャッシュ有効期限（秒）
 
 
@@ -109,25 +110,24 @@ class BinanceClient:
         if self._weight_tracker:
             self._weight_tracker.wait_if_needed()
 
-        # --- 接続エラー（443等）は無制限リトライ ---
-        attempt_conn = 0
+        attempt = 0
         while True:
-            attempt_conn += 1
+            attempt += 1
             try:
                 response = self._send_request(method, url, params)
                 if response.status_code == 429:
                     retry_after = int(
-                        response.headers.get("Retry-After", RETRY_DELAY * (2**attempt_conn))
+                        response.headers.get("Retry-After", RETRY_DELAY * (2**attempt))
                     )
                     logger.warning(
-                        f"レートリミット到達、{retry_after}秒後にリトライ ({attempt_conn}回目)"
+                        f"レートリミット到達、{retry_after}秒後にリトライ ({attempt}回目)"
                     )
                     time.sleep(retry_after)
                     continue
                 if response.status_code >= 500:
-                    wait_time = RETRY_DELAY * (2 ** min(attempt_conn, 5))
+                    wait_time = RETRY_DELAY * (2 ** min(attempt, 5))
                     logger.warning(
-                        f"サーバーエラー ({response.status_code})、{wait_time}秒後にリトライ ({attempt_conn}回目)"
+                        f"サーバーエラー ({response.status_code})、{wait_time}秒後にリトライ ({attempt}回目)"
                     )
                     time.sleep(wait_time)
                     continue
@@ -138,20 +138,20 @@ class BinanceClient:
                         self._weight_tracker.update_weight(int(used))
                 return response.json()
             except requests.exceptions.ConnectionError as e:
-                # DNS解決失敗（ネットワーク断）は再接続見込みが低い → 300秒wait
-                # 接続エラー（応答なし等）は指数バックオフ
+                if attempt >= MAX_CONNECTION_RETRIES:
+                    raise BinanceAPIError(
+                        f"接続エラー（{MAX_CONNECTION_RETRIES}回リトライ後）: {e}"
+                    ) from e
                 cause = e.args[0] if e.args else ""
                 is_dns_failure = "NameResolutionError" in cause or "getaddrinfo failed" in cause
                 if is_dns_failure:
                     wait_time = 60
                     logger.warning(
-                        f"DNS解決失敗（接続エラー）、{wait_time}秒後にリトライ ({attempt_conn}回目): {e}"
+                        f"DNS解決失敗（接続エラー）、{wait_time}秒後にリトライ ({attempt}回目): {e}"
                     )
                 else:
-                    wait_time = min(RETRY_DELAY * (2 ** min(attempt_conn, 5)), 60)
-                    logger.warning(
-                        f"接続エラー、{wait_time}秒後にリトライ ({attempt_conn}回目): {e}"
-                    )
+                    wait_time = min(RETRY_DELAY * (2 ** min(attempt, 5)), 60)
+                    logger.warning(f"接続エラー、{wait_time}秒後にリトライ ({attempt}回目): {e}")
                 time.sleep(wait_time)
                 continue
             except requests.exceptions.HTTPError as e:
@@ -162,20 +162,13 @@ class BinanceClient:
                     raise BinanceAPIError(
                         f"クライアントエラー: {status_code} - {response_text}"
                     ) from e
-                wait_time = RETRY_DELAY * (2 ** min(attempt_conn, 5))
-                logger.warning(f"HTTP エラー、{wait_time}秒後にリトライ ({attempt_conn}回目)")
+                wait_time = RETRY_DELAY * (2 ** min(attempt, 5))
+                logger.warning(f"HTTP エラー、{wait_time}秒後にリトライ ({attempt}回目)")
                 time.sleep(wait_time)
                 continue
-            except requests.exceptions.Timeout as e:
-                wait_time = min(RETRY_DELAY * (2 ** min(attempt_conn, 5)), 60)
-                logger.warning(f"タイムアウト、{wait_time}秒後にリトライ ({attempt_conn}回目): {e}")
-                time.sleep(wait_time)
-                continue
-            except requests.exceptions.RequestException as e:
-                wait_time = min(RETRY_DELAY * (2 ** min(attempt_conn, 5)), 60)
-                logger.warning(
-                    f"リクエスト失敗、{wait_time}秒後にリトライ ({attempt_conn}回目): {e}"
-                )
+            except (requests.exceptions.Timeout, requests.exceptions.RequestException) as e:
+                wait_time = min(RETRY_DELAY * (2 ** min(attempt, 5)), 60)
+                logger.warning(f"リクエストエラー、{wait_time}秒後にリトライ ({attempt}回目): {e}")
                 time.sleep(wait_time)
                 continue
 
