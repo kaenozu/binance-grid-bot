@@ -98,47 +98,37 @@ class BinanceClient:
             query_string = urlencode(params)
             params["signature"] = self._generate_signature(query_string)
 
-        last_error: Optional[BinanceAPIError] = None
-        for attempt in range(MAX_RETRIES):
+        # --- 接続エラー（443等）は無制限リトライ ---
+        attempt_conn = 0
+        while True:
+            attempt_conn += 1
             try:
                 response = self._send_request(method, url, params)
-
-                # レートリミット・サーバーエラーチェック
                 if response.status_code == 429:
                     retry_after = int(
-                        response.headers.get("Retry-After", RETRY_DELAY * (2**attempt))
+                        response.headers.get("Retry-After", RETRY_DELAY * (2**attempt_conn))
                     )
                     logger.warning(
-                        f"レートリミット到達、{retry_after}秒後にリトライ ({attempt + 1}/{MAX_RETRIES})"
+                        f"レートリミット到達、{retry_after}秒後にリトライ ({attempt_conn}回目)"
                     )
                     time.sleep(retry_after)
-                    last_error = BinanceAPIError("レートリミット到達")
                     continue
-
                 if response.status_code >= 500:
-                    wait_time = RETRY_DELAY * (2**attempt)
+                    wait_time = RETRY_DELAY * (2 ** min(attempt_conn, 5))
                     logger.warning(
-                        f"サーバーエラー ({response.status_code})、{wait_time}秒後にリトライ ({attempt + 1}/{MAX_RETRIES})"
+                        f"サーバーエラー ({response.status_code})、{wait_time}秒後にリトライ ({attempt_conn}回目)"
                     )
                     time.sleep(wait_time)
-                    last_error = BinanceAPIError(f"サーバーエラー: {response.status_code}")
                     continue
-
                 response.raise_for_status()
                 return response.json()
-
-            except requests.exceptions.Timeout as e:
-                last_error = self._handle_retryable_error(e, attempt, "タイムアウト")
-                if last_error is None:
-                    continue
-                raise last_error from e
-
             except requests.exceptions.ConnectionError as e:
-                last_error = self._handle_retryable_error(e, attempt, "接続エラー")
-                if last_error is None:
-                    continue
-                raise last_error from e
-
+                wait_time = min(RETRY_DELAY * (2 ** min(attempt_conn, 5)), 60)
+                logger.warning(
+                    f"接続エラー（443等）、{wait_time}秒後にリトライ ({attempt_conn}回目): {e}"
+                )
+                time.sleep(wait_time)
+                continue
             except requests.exceptions.HTTPError as e:
                 status_code = getattr(e.response, "status_code", 0) if e.response else 0
                 if 400 <= status_code < 500:
@@ -147,34 +137,22 @@ class BinanceClient:
                     raise BinanceAPIError(
                         f"クライアントエラー: {status_code} - {response_text}"
                     ) from e
-                raise BinanceAPIError(f"HTTP エラー: {e}") from e
-
+                wait_time = RETRY_DELAY * (2 ** min(attempt_conn, 5))
+                logger.warning(f"HTTP エラー、{wait_time}秒後にリトライ ({attempt_conn}回目)")
+                time.sleep(wait_time)
+                continue
+            except requests.exceptions.Timeout as e:
+                wait_time = min(RETRY_DELAY * (2 ** min(attempt_conn, 5)), 60)
+                logger.warning(f"タイムアウト、{wait_time}秒後にリトライ ({attempt_conn}回目): {e}")
+                time.sleep(wait_time)
+                continue
             except requests.exceptions.RequestException as e:
-                last_error = self._handle_retryable_error(e, attempt, "リクエスト失敗")
-                if last_error is None:
-                    continue
-                raise last_error from e
-
-        logger.error(f"リトライ上限到達 ({MAX_RETRIES} 回)")
-        raise last_error or BinanceAPIError("リトライ上限到達")
-
-    def _handle_retryable_error(
-        self, exc: Exception, attempt: int, error_type: str
-    ) -> Optional[BinanceAPIError]:
-        """リトライ可能エラーを処理
-
-        Returns:
-            BinanceAPIError: 再試行不可能な場合（上限到達）
-            None: 再試行可能な場合
-        """
-        if attempt < MAX_RETRIES - 1:
-            wait_time = RETRY_DELAY * (2**attempt)
-            logger.warning(
-                f"{error_type}、{wait_time}秒後にリトライ ({attempt + 1}/{MAX_RETRIES}): {exc}"
-            )
-            time.sleep(wait_time)
-            return None
-        return BinanceAPIError(f"{error_type}: {exc}")
+                wait_time = min(RETRY_DELAY * (2 ** min(attempt_conn, 5)), 60)
+                logger.warning(
+                    f"リクエスト失敗、{wait_time}秒後にリトライ ({attempt_conn}回目): {e}"
+                )
+                time.sleep(wait_time)
+                continue
 
     def _send_request(self, method: str, url: str, params: dict) -> requests.Response:
         """HTTP リクエストを送信"""
