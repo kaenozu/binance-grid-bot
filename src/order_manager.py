@@ -171,32 +171,31 @@ class OrderManager:
         new_fills: list[FillEvent] = []
         filled_ids: set[int] = set()
 
+        stale_filled = [oid for oid, info in self._active_orders.items() if info.status == "FILLED"]
+        for oid in stale_filled:
+            self._active_orders.pop(oid, None)
+        if stale_filled:
+            logger.info(f"残留約定済み注文クリーンアップ: {len(stale_filled)} 件")
+
         for order_id, order_info in list(self._active_orders.items()):
-            if order_id in filled_ids:
-                continue
-
             try:
-                if order_info.status == "FILLED":
-                    executed_qty = order_info.quantity
-                    executed_price = order_info.price
-                else:
-                    order = self.client.get_order(self.strategy.symbol, order_id)
-                    if order["status"] != "FILLED":
-                        continue
-                    order_info.status = "FILLED"
-                    executed_qty = float(order["executedQty"])
-                    executed_price = float(order.get("avgPrice") or order["price"])
+                order = self.client.get_order(self.strategy.symbol, order_id)
+                if order["status"] != "FILLED":
+                    continue
+                order_info.status = "FILLED"
+                executed_qty = float(order["executedQty"])
+                executed_price = float(order.get("avgPrice") or order["price"])
 
-                    if order_info.side == "BUY":
-                        self.strategy.mark_position_filled(
-                            grid_level := order_info.grid_level, order_id
-                        )
-                        logger.info(f"グリッド {grid_level}: 買い約定完了 @ {executed_price}")
-                    elif order_info.side == "SELL":
-                        self.strategy.mark_position_closed(
-                            grid_level := order_info.grid_level, order_id
-                        )
-                        logger.info(f"グリッド {grid_level}: 売り約定完了 @ {executed_price}")
+                if order_info.side == "BUY":
+                    self.strategy.mark_position_filled(
+                        grid_level := order_info.grid_level, order_id
+                    )
+                    logger.info(f"グリッド {grid_level}: 買い約定完了 @ {executed_price}")
+                elif order_info.side == "SELL":
+                    self.strategy.mark_position_closed(
+                        grid_level := order_info.grid_level, order_id
+                    )
+                    logger.info(f"グリッド {grid_level}: 売り約定完了 @ {executed_price}")
 
                 grid_level = order_info.grid_level
                 new_fills.append(
@@ -303,15 +302,6 @@ class OrderManager:
         except Exception as e:
             logger.error(f"グリッド {grid_level} 売り注文失敗: {e}")
             return False
-
-    def cleanup_filled_orders(self) -> None:
-        """約定済み注文を内部管理から除去"""
-        filled_ids = [oid for oid, info in self._active_orders.items() if info.status == "FILLED"]
-        for oid in filled_ids:
-            del self._active_orders[oid]
-
-        if filled_ids:
-            logger.info(f"約定済み注文クリーンアップ: {len(filled_ids)} 件")
 
     def get_active_order_count(self) -> int:
         """未約定のアクティブ注文数"""

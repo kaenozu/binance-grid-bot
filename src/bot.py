@@ -7,7 +7,6 @@
 
 import time
 import traceback
-import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -81,22 +80,12 @@ class GridBot:
 
         portfolio_stats = persistence.load_portfolio_stats()
         if portfolio_stats:
-            ps = portfolio_stats
-            self.portfolio.stats.initial_balance = ps["initial_balance"]
-            self.portfolio.stats.current_balance = ps["current_balance"]
-            self.portfolio.stats.total_profit = ps["total_profit"]
-            self.portfolio.stats.realized_profit = ps["realized_profit"]
-            self.portfolio.stats.unrealized_profit = ps["unrealized_profit"]
-            self.portfolio.stats.total_trades = ps["total_trades"]
-            self.portfolio.stats.winning_trades = ps["winning_trades"]
-            self.portfolio.stats.losing_trades = ps["losing_trades"]
-            self.portfolio.stats.settled_trades = ps["settled_trades"]
-            self.portfolio.stats.win_rate = ps["win_rate"]
-            self.portfolio.stats.avg_profit_per_trade = ps["avg_profit_per_trade"]
-            self.portfolio.stats.total_fees = ps["total_fees"]
-            self.portfolio.stats.start_time = ps["start_time"]
-            self.portfolio.stats.last_update = ps["last_update"]
+            persistence.restore_stats_to(self.portfolio.stats, portfolio_stats)
             logger.info("ポートフォリオ統計を復元")
+
+        trade_records = persistence.load_trades()
+        if trade_records:
+            self.portfolio.restore_trades(trade_records)
 
     def _sync_orders(self):
         """取引所のオープン注文と内部状態を同期"""
@@ -221,11 +210,11 @@ class GridBot:
                     grid.buy_order_id = None
                     grid.sell_order_id = None
                 self._place_initial_orders()
+                symbol_info = self.client.get_symbol_info(self.strategy.symbol)
                 open_positions = [
                     g for g in self.strategy.grids if g.position_filled and g.sell_price
                 ]
                 for grid in open_positions:
-                    symbol_info = self.client.get_symbol_info(self.strategy.symbol)
                     qty = self.strategy.get_order_quantity(
                         grid.buy_price,
                         symbol_info["min_qty"] if symbol_info else 0,

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from src.binance_client import BinanceClient
+from src import persistence as persistence_module
 from utils.logger import setup_logger
 
 logger = setup_logger("portfolio")
@@ -91,6 +92,25 @@ class Portfolio:
         except Exception as e:
             logger.error(f"残高取得失敗: {e}")
 
+    def restore_trades(self, trade_records: list[dict]):
+        """DBから復元したトレード履歴を読み込み"""
+        self.trades = []
+        for r in trade_records:
+            self.trades.append(
+                Trade(
+                    timestamp=r["timestamp"],
+                    symbol=r["symbol"],
+                    side=r["side"],
+                    price=r["price"],
+                    quantity=r["quantity"],
+                    order_id=r["order_id"],
+                    grid_level=r["grid_level"],
+                    profit=r["profit"],
+                    matched=r["matched"],
+                )
+            )
+        logger.info(f"トレード履歴を復元: {len(self.trades)} 件")
+
     def record_trade(
         self, side: str, price: float, quantity: float, order_id: int, grid_level: int
     ) -> Optional[float]:
@@ -151,6 +171,21 @@ class Portfolio:
                 )
 
                 logger.info(f"取引記録: グリッド {grid_level}, 利益={profit:.2f}")
+
+        try:
+            persistence_module.save_trade(
+                timestamp=trade.timestamp,
+                symbol=trade.symbol,
+                side=trade.side,
+                price=trade.price,
+                quantity=trade.quantity,
+                order_id=trade.order_id,
+                grid_level=trade.grid_level,
+                profit=trade.profit,
+                matched=trade.matched,
+            )
+        except Exception as e:
+            logger.error(f"トレード保存失敗: {e}")
 
         logger.info(f"取引記録追加: {side} {quantity} @ {price}")
         return profit

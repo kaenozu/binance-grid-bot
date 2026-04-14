@@ -226,3 +226,55 @@ def load_portfolio_stats() -> Optional[dict]:
         "start_time": datetime.fromisoformat(row["start_time"]) if row["start_time"] else None,
         "last_update": datetime.fromisoformat(row["last_update"]) if row["last_update"] else None,
     }
+
+
+def load_trades() -> list[dict]:
+    """トレード履歴をDBから復元"""
+    if not DB_PATH.exists():
+        return []
+    conn = _get_connection()
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT timestamp, symbol, side, price, quantity, order_id, grid_level, profit, matched "
+        "FROM trades ORDER BY id ASC"
+    ).fetchall()
+    conn.close()
+    return [
+        {
+            "timestamp": datetime.fromisoformat(row["timestamp"]),
+            "symbol": row["symbol"],
+            "side": row["side"],
+            "price": row["price"],
+            "quantity": row["quantity"],
+            "order_id": row["order_id"],
+            "grid_level": row["grid_level"],
+            "profit": row["profit"],
+            "matched": bool(row["matched"]),
+        }
+        for row in rows
+    ]
+
+
+STATS_FIELDS = [
+    "initial_balance",
+    "current_balance",
+    "total_profit",
+    "realized_profit",
+    "unrealized_profit",
+    "total_trades",
+    "winning_trades",
+    "losing_trades",
+    "settled_trades",
+    "win_rate",
+    "avg_profit_per_trade",
+    "total_fees",
+    "start_time",
+    "last_update",
+]
+
+
+def restore_stats_to(stats_obj, data: dict):
+    """PortfolioStats オブジェクトにDB値を一括復元"""
+    for field in STATS_FIELDS:
+        if field in data:
+            setattr(stats_obj, field, data[field])
