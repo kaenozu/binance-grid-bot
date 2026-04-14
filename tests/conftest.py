@@ -27,6 +27,12 @@ def restore_settings_after_test():
         "INVESTMENT_AMOUNT": Settings.INVESTMENT_AMOUNT,
         "STOP_LOSS_PERCENTAGE": Settings.STOP_LOSS_PERCENTAGE,
         "MAX_POSITIONS": Settings.MAX_POSITIONS,
+        "CHECK_INTERVAL": Settings.CHECK_INTERVAL,
+        "STATUS_DISPLAY_INTERVAL": Settings.STATUS_DISPLAY_INTERVAL,
+        "MAX_CONSECUTIVE_ERRORS": Settings.MAX_CONSECUTIVE_ERRORS,
+        "GRID_RANGE_FACTOR": Settings.GRID_RANGE_FACTOR,
+        "TRADING_FEE_RATE": Settings.TRADING_FEE_RATE,
+        "CLOSE_ON_STOP": Settings.CLOSE_ON_STOP,
     }
     yield
     # テスト後に値を復元

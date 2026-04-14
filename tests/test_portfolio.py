@@ -179,6 +179,28 @@ class TestPortfolio:
         assert buy_trade is not None
         assert buy_trade.price == 49000.0
 
+    def test_record_sell_trade_with_fee(self, mock_client_for_portfolio):
+        portfolio = Portfolio(mock_client_for_portfolio, "BTCUSDT", "USDT", fee_rate=0.001)
+        portfolio.record_trade(
+            side="BUY",
+            price=50000.0,
+            quantity=0.002,
+            order_id=12345,
+            grid_level=5,
+        )
+        portfolio.record_trade(
+            side="SELL",
+            price=51000.0,
+            quantity=0.002,
+            order_id=12346,
+            grid_level=5,
+        )
+        # buy_fee = 50000 * 0.002 * 0.001 = 0.1
+        # sell_fee = 51000 * 0.002 * 0.001 = 0.102
+        # net profit = 2.0 - 0.1 - 0.102 = 1.798
+        assert abs(portfolio.stats.realized_profit - 1.798) < 0.01
+        assert abs(portfolio.stats.total_fees - 0.202) < 0.001
+
     def test_generate_report(self, portfolio):
         portfolio.record_trade(
             side="BUY",

@@ -210,3 +210,35 @@ class GridStrategy:
     def is_within_grid_range(self, price: float) -> bool:
         """価格がグリッド範囲内か"""
         return self.lower_price <= price <= self.upper_price
+
+    def shift_grids(
+        self, new_lower: Optional[float] = None, new_upper: Optional[float] = None
+    ):
+        """グリッド範囲をシフト（価格トレンド対応）
+
+        Args:
+            new_lower: 新しい下限価格（Noneの場合 current_price から自動計算）
+            new_upper: 新しい上限価格（Noneの場合 current_price から自動計算）
+        """
+        range_factor = Settings.GRID_RANGE_FACTOR
+
+        if new_lower is not None and new_upper is not None:
+            self.lower_price = new_lower
+            self.upper_price = new_upper
+        else:
+            self.lower_price = self.current_price * (1 - range_factor)
+            self.upper_price = self.current_price * (1 + range_factor)
+
+        logger.info(
+            f"グリッド範囲シフト: {self.lower_price:.2f} - {self.upper_price:.2f}"
+        )
+
+        old_grids = {g.level: g for g in self.grids}
+        self._calculate_grids()
+
+        for grid in self.grids:
+            if grid.level in old_grids:
+                old = old_grids[grid.level]
+                grid.position_filled = old.position_filled
+                grid.buy_order_id = old.buy_order_id
+                grid.sell_order_id = old.sell_order_id

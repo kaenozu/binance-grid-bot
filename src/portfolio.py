@@ -45,6 +45,7 @@ class PortfolioStats:
     settled_trades: int = 0
     win_rate: float = 0.0
     avg_profit_per_trade: float = 0.0
+    total_fees: float = 0.0
     start_time: Optional[datetime] = None
     last_update: Optional[datetime] = None
 
@@ -52,18 +53,23 @@ class PortfolioStats:
 class Portfolio:
     """資産管理クラス"""
 
-    def __init__(self, client: BinanceClient, symbol: str, quote_asset: str = "USDT"):
+    def __init__(
+        self, client: BinanceClient, symbol: str, quote_asset: str = "USDT", fee_rate: float = 0.0
+    ):
         """
         Args:
             client: Binance API クライアント
             symbol: 取引ペア
             quote_asset: 証拠金資産（デフォルト: USDT）
+            fee_rate: 取引手数料率
         """
         self.client = client
         self.symbol = symbol
         self.quote_asset = quote_asset
+        self._fee_rate = fee_rate
 
         self.trades: list[Trade] = []
+        self._max_trades = 10000
         self.stats = PortfolioStats()
         self.stats.start_time = datetime.now()
         self.stats.last_update = datetime.now()
@@ -104,6 +110,8 @@ class Portfolio:
         )
 
         self.trades.append(trade)
+        if len(self.trades) > self._max_trades:
+            self.trades = self.trades[-self._max_trades // 2 :]
         self.stats.total_trades += 1
         self.stats.last_update = datetime.now()
 
@@ -113,14 +121,18 @@ class Portfolio:
             buy_trade = self.find_matching_buy_trade(grid_level)
             if buy_trade:
                 profit = (price - buy_trade.price) * quantity
+                fee_rate = getattr(self, "_fee_rate", 0.0)
+                if fee_rate > 0 and buy_trade:
+                    buy_fee = buy_trade.price * quantity * fee_rate
+                    sell_fee = price * quantity * fee_rate
+                    profit = profit - buy_fee - sell_fee
+                    self.stats.total_fees += buy_fee + sell_fee
                 trade.profit = profit
                 buy_trade.matched = True
                 trade.matched = True
                 self.stats.realized_profit += profit
                 self.stats.settled_trades += 1
-                self.stats.total_profit = (
-                    self.stats.realized_profit + self.stats.unrealized_profit
-                )
+                self.stats.total_profit = self.stats.realized_profit + self.stats.unrealized_profit
 
                 if profit > 0:
                     self.stats.winning_trades += 1
@@ -150,11 +162,7 @@ class Portfolio:
             対応する買い注文（ない場合はNone）
         """
         for trade in reversed(self.trades):
-            if (
-                trade.side == "BUY"
-                and trade.grid_level == grid_level
-                and not trade.matched
-            ):
+            if trade.side == "BUY" and trade.grid_level == grid_level and not trade.matched:
                 return trade
         return None
 
@@ -182,9 +190,7 @@ class Portfolio:
         """レポートを生成"""
         self._update_balance()
 
-        elapsed = (
-            datetime.now() - self.stats.start_time if self.stats.start_time else None
-        )
+        elapsed = datetime.now() - self.stats.start_time if self.stats.start_time else None
         hours = elapsed.total_seconds() / 3600 if elapsed else 0
 
         report = f"""

@@ -52,6 +52,17 @@ class BinanceClient:
 
         logger.info(f"Binance クライアント初期化完了 (Testnet: {Settings.USE_TESTNET})")
 
+    def close(self):
+        """セッションをクローズ（リソース解放）"""
+        self.session.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+        return False
+
     def _generate_signature(self, query_string: str) -> str:
         """署名を生成"""
         return hmac.new(

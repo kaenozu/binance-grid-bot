@@ -1,0 +1,15 @@
+.git
+.env
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.coverage
+logs/
+*.log
+backtest_*.json
+.vscode
+.idea
+venv/
+.venv/
+env/
