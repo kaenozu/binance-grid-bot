@@ -42,16 +42,18 @@ def setup_logger(name: str = "grid_bot") -> logging.Logger:
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    # ファイルハンドラ（logs ディレクトリ）
-    log_dir = Path(__file__).parent.parent / "logs"
-    log_dir.mkdir(exist_ok=True)
+    # pytest 実行中はファイル出力しない（実運用ログとテスト出力を分離）
+    in_pytest = "pytest" in sys.modules or any("pytest" in str(a) for a in sys.argv)
+    if not in_pytest:
+        log_dir = Path(__file__).parent.parent / "logs"
+        log_dir.mkdir(exist_ok=True)
 
-    log_file = log_dir / "grid_bot.log"
-    file_handler = RotatingFileHandler(
-        log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
-    )
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+        log_file = log_dir / "grid_bot.log"
+        file_handler = RotatingFileHandler(
+            log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+        )
+        file_handler.setLevel(logging.DEBUG)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
 
     return logger
