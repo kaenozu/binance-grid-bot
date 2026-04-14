@@ -41,6 +41,7 @@ def close_open_positions(client, strategy, portfolio):
     base_asset = symbol_info["base_asset"] if symbol_info else strategy.symbol.replace("USDT", "")
     step_size = symbol_info["step_size"] if symbol_info else 0
     min_qty = symbol_info["min_qty"] if symbol_info else 0
+    min_notional = symbol_info["min_notional"] if symbol_info else 0
     try:
         balances = client.get_account_balance()
     except Exception as e:
@@ -60,8 +61,11 @@ def close_open_positions(client, strategy, portfolio):
         if available <= 0:
             break
         try:
-            qty_per_grid = strategy.get_order_quantity(
-                grid.buy_price, min_qty=min_qty, step_size=step_size
+            qty_per_grid = grid.filled_quantity or strategy.get_order_quantity(
+                grid.buy_price,
+                min_qty=min_qty,
+                step_size=step_size,
+                min_notional=min_notional,
             )
             sell_qty = min(available, qty_per_grid)
             if sell_qty <= 0:
@@ -84,6 +88,7 @@ def close_open_positions(client, strategy, portfolio):
             )
             available -= filled_qty
             grid.position_filled = False
+            grid.filled_quantity = None
             logger.info(f"グリッド {grid.level}: 緊急成行決済 {filled_qty} @ {filled_price}")
         except Exception as e:
             logger.error(f"グリッド {grid.level}: 緊急決済失敗: {e}")

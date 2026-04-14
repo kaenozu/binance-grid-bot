@@ -6,7 +6,6 @@
 """
 
 from unittest.mock import MagicMock, patch
-import pytest
 
 from src.grid_strategy import GridStrategy
 
@@ -25,8 +24,8 @@ def test_bot_initialization_sets_price(mock_settings):
             mock_strategy.grids = []
             mock_strategy_cls.return_value = mock_strategy
 
-            with patch("src.bot.OrderManager") as mock_om:
-                with patch("src.bot.RiskManager") as mock_rm:
+            with patch("src.bot.OrderManager"):
+                with patch("src.bot.RiskManager"):
                     with patch("src.bot.Portfolio") as mock_port:
                         mock_port.return_value = MagicMock()
                         mock_port.stats = MagicMock()
@@ -131,7 +130,7 @@ def test_handle_grid_shift_preserves_filled_positions():
         investment_amount=1000.0,
     )
 
-    for i in [0, 1, 2]:
+    for i in [0, 2, 4]:
         strategy.grids[i].position_filled = True
 
     mock_client = MagicMock()
@@ -147,6 +146,7 @@ def test_handle_grid_shift_preserves_filled_positions():
     mock_om = MagicMock()
     mock_om.cancel_all_orders.return_value = 0
     mock_om.place_grid_orders.return_value = MagicMock(placed=0)
+    mock_rm = MagicMock()
 
     from src.bot import GridBot
 
@@ -154,6 +154,7 @@ def test_handle_grid_shift_preserves_filled_positions():
     bot.client = mock_client
     bot.strategy = strategy
     bot.order_manager = mock_om
+    bot.risk_manager = mock_rm
     bot.ws_client = None
     bot.symbol = "BTCUSDT"
     bot.current_price = 70000.0
@@ -162,7 +163,7 @@ def test_handle_grid_shift_preserves_filled_positions():
 
     filled_after = [g for g in bot.strategy.grids if g.position_filled]
     assert len(filled_after) == 3
-    for i in range(3):
-        assert bot.strategy.grids[i].position_filled is True
-    for i in range(3, len(bot.strategy.grids)):
-        assert bot.strategy.grids[i].position_filled is False
+    original_prices = [45000.0, 47000.0, 49000.0]
+    for filled_grid in filled_after:
+        closest = min(original_prices, key=lambda p: abs(p - filled_grid.buy_price))
+        assert abs(filled_grid.buy_price - closest) <= strategy.grid_spacing

@@ -6,20 +6,34 @@
 """
 
 import os
-from dotenv import load_dotenv
 from typing import Optional
+
+from dotenv import load_dotenv
 
 load_dotenv()
 
 
-def _safe_float(value: Optional[str]) -> Optional[float]:
-    """環境変数を安全にfloatに変換"""
+def _safe_float_optional(value: Optional[str]) -> Optional[float]:
     if not value:
         return None
     try:
         return float(value)
     except ValueError:
         return None
+
+
+def _safe_float(value: Optional[str], default: float = 0.0) -> float:
+    result = _safe_float_optional(value)
+    return result if result is not None else default
+
+
+def _safe_int(value: Optional[str], default: int = 0) -> int:
+    if not value:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
 
 
 class Settings:
@@ -32,23 +46,23 @@ class Settings:
 
     # 取引設定
     TRADING_SYMBOL: str = os.getenv("TRADING_SYMBOL", "BTCUSDT")
-    GRID_COUNT: int = int(os.getenv("GRID_COUNT", "10"))
-    LOWER_PRICE: Optional[float] = _safe_float(os.getenv("LOWER_PRICE"))
-    UPPER_PRICE: Optional[float] = _safe_float(os.getenv("UPPER_PRICE"))
-    INVESTMENT_AMOUNT: float = float(os.getenv("INVESTMENT_AMOUNT", "100"))
+    GRID_COUNT: int = _safe_int(os.getenv("GRID_COUNT"), 10)
+    LOWER_PRICE: Optional[float] = _safe_float_optional(os.getenv("LOWER_PRICE"))
+    UPPER_PRICE: Optional[float] = _safe_float_optional(os.getenv("UPPER_PRICE"))
+    INVESTMENT_AMOUNT: float = _safe_float(os.getenv("INVESTMENT_AMOUNT"), 100.0) or 100.0
 
     # リスク管理
-    STOP_LOSS_PERCENTAGE: float = float(os.getenv("STOP_LOSS_PERCENTAGE", "5"))
-    MAX_POSITIONS: int = int(os.getenv("MAX_POSITIONS", "5"))
+    STOP_LOSS_PERCENTAGE: float = _safe_float(os.getenv("STOP_LOSS_PERCENTAGE"), 5.0) or 5.0
+    MAX_POSITIONS: int = _safe_int(os.getenv("MAX_POSITIONS"), 5)
 
     # ボット動作設定
-    CHECK_INTERVAL: int = int(os.getenv("CHECK_INTERVAL", "10"))
-    STATUS_DISPLAY_INTERVAL: int = int(os.getenv("STATUS_DISPLAY_INTERVAL", "60"))
-    MAX_CONSECUTIVE_ERRORS: int = int(os.getenv("MAX_CONSECUTIVE_ERRORS", "5"))
-    GRID_RANGE_FACTOR: float = float(os.getenv("GRID_RANGE_FACTOR", "0.15"))
-    TRADING_FEE_RATE: float = float(os.getenv("TRADING_FEE_RATE", "0.001"))
+    CHECK_INTERVAL: int = _safe_int(os.getenv("CHECK_INTERVAL"), 10)
+    STATUS_DISPLAY_INTERVAL: int = _safe_int(os.getenv("STATUS_DISPLAY_INTERVAL"), 60)
+    MAX_CONSECUTIVE_ERRORS: int = _safe_int(os.getenv("MAX_CONSECUTIVE_ERRORS"), 5)
+    GRID_RANGE_FACTOR: float = _safe_float(os.getenv("GRID_RANGE_FACTOR"), 0.15) or 0.15
+    TRADING_FEE_RATE: float = _safe_float(os.getenv("TRADING_FEE_RATE"), 0.001) or 0.001
     CLOSE_ON_STOP: bool = os.getenv("CLOSE_ON_STOP", "true").lower() == "true"
-    PERSIST_INTERVAL: int = int(os.getenv("PERSIST_INTERVAL", "60"))
+    PERSIST_INTERVAL: int = _safe_int(os.getenv("PERSIST_INTERVAL"), 60)
 
     @classmethod
     def validate(cls) -> list[str]:

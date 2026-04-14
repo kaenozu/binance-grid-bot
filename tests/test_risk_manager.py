@@ -5,8 +5,10 @@
 関連ファイル: src/risk_manager.py, tests/conftest.py
 """
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
+
 from src.risk_manager import RiskManager
 
 

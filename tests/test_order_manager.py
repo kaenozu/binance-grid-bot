@@ -5,10 +5,12 @@
 関連ファイル: src/order_manager.py, tests/conftest.py
 """
 
+from unittest.mock import MagicMock
+
 import pytest
-from unittest.mock import MagicMock, patch
-from src.order_manager import OrderManager
+
 from src.grid_strategy import GridStrategy
+from src.order_manager import OrderManager
 
 
 class TestOrderManager:

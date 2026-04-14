@@ -6,6 +6,7 @@
 """
 
 import pytest
+
 from src.paper_client import PaperClient
 
 

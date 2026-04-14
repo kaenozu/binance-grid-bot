@@ -269,8 +269,8 @@ class BacktestEngine:
         end_price = klines[-1]["close"]
         price_change = (end_price - start_price) / start_price * 100
 
-        total_value = self.investment_amount + self.total_profit
-        roi = (total_value - self.investment_amount) / self.investment_amount * 100
+        final_value = self._calculate_portfolio_value(klines[-1]["close"])
+        roi = (final_value - self.investment_amount) / self.investment_amount * 100
 
         return {
             "symbol": self.symbol,

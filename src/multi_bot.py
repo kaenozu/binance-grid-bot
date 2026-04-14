@@ -8,6 +8,7 @@
 
 import threading
 import time
+from collections import deque
 from typing import TYPE_CHECKING, Optional
 
 from src.api_weight import APIWeightTracker
@@ -33,7 +34,7 @@ class MultiBot:
         self._bots: dict[str, GridBot] = {}  # type: ignore[name-defined]
         self._threads: list[threading.Thread] = []
         self._shutdown_event = threading.Event()
-        self._errors: dict[str, list[str]] = {s: [] for s in symbols}
+        self._errors: dict[str, deque] = {s: deque(maxlen=100) for s in symbols}
 
     def start_all(self):
         """全ペアのボットを開始"""
@@ -68,15 +69,23 @@ class MultiBot:
         logger.info("全ボット停止完了")
 
     def _run_bot(self, bot, symbol: str):
-        """単一ボットをエラー分離して実行"""
+        max_retries = 10
+        retry_count = 0
         while not self._shutdown_event.is_set():
             try:
                 bot.start()
+                retry_count = 0
             except Exception as e:
+                retry_count += 1
                 self._errors[symbol].append(str(e))
-                logger.error(f"ペア {symbol} エラー: {e}")
+                logger.error(f"ペア {symbol} エラー (リトライ {retry_count}/{max_retries}): {e}")
+                if retry_count >= max_retries:
+                    logger.critical(
+                        f"ペア {symbol}: 連続失敗 {max_retries} 回。全ボットを停止します。"
+                    )
+                    self._shutdown_event.set()
+                    break
                 if not self._shutdown_event.is_set():
-                    logger.info(f"ペア {symbol} を5秒後にリスタート...")
                     time.sleep(5)
 
     def stop_all(self, timeout: float = 30):

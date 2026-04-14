@@ -8,9 +8,7 @@
 import json
 import threading
 import time
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from src.ws_client import BinanceWebSocketClient
 

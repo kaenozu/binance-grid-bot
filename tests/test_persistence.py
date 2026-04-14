@@ -7,19 +7,17 @@
 
 import sqlite3
 from datetime import datetime
-from pathlib import Path
 
 import pytest
 
 from src.persistence import (
-    DB_PATH,
-    save_trade,
-    save_grid_states,
-    save_portfolio_stats,
     load_grid_states,
     load_portfolio_stats,
     load_trades,
     restore_stats_to,
+    save_grid_states,
+    save_portfolio_stats,
+    save_trade,
 )
 
 

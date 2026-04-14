@@ -83,6 +83,9 @@ class GridBot:
                     grid.sell_order_id = gs["sell_order_id"]
             logger.info(f"グリッド状態を復元: {len(grid_states)} レベル")
 
+            filled_count = sum(1 for g in self.strategy.grids if g.position_filled)
+            self.risk_manager.current_positions = filled_count
+
         portfolio_stats = persistence.load_portfolio_stats()
         if portfolio_stats:
             persistence.restore_stats_to(self.portfolio.stats, portfolio_stats)
@@ -230,6 +233,7 @@ class GridBot:
                     )
                     continue
                 logger.info(f"グリッド {fill.grid}: 買い約定、売り注文配置")
+                self.strategy.grids[fill.grid].filled_quantity = fill.quantity
                 self._place_sell_for_grid(fill.grid, fill.quantity)
             elif fill.side == "SELL":
                 self.risk_manager.record_position_close(profit or 0.0)
@@ -237,15 +241,30 @@ class GridBot:
                 self._place_grid_orders_for_level(fill.grid)
 
     def _handle_grid_shift(self):
-        """価格がグリッド範囲外の場合、グリッドを再計算して注文を再配置"""
         logger.warning(f"価格 {self.current_price:.2f} がグリッド範囲外。動的シフトを実行します。")
-        filled_count = sum(1 for g in self.strategy.grids if g.position_filled)
+        filled_positions = [
+            (g.buy_price, g.buy_order_id, g.filled_quantity)
+            for g in self.strategy.grids
+            if g.position_filled
+        ]
 
         self.order_manager.cancel_all_orders()
         self.strategy.shift_grids()
+        self.risk_manager.stop_loss_price = self.strategy.lower_price * (
+            1 - Settings.STOP_LOSS_PERCENTAGE / 100
+        )
 
-        for i in range(min(filled_count, len(self.strategy.grids))):
-            self.strategy.grids[i].position_filled = True
+        claimed: set[int] = set()
+        for buy_price, buy_order_id, qty in filled_positions:
+            available = [g for g in self.strategy.grids if g.level not in claimed]
+            if not available:
+                logger.warning("グリッドシフト: 空きグリッド不足、一部ポジションの復元をスキップ")
+                break
+            best = min(available, key=lambda g: abs(g.buy_price - buy_price))
+            best.position_filled = True
+            best.buy_order_id = buy_order_id
+            best.filled_quantity = qty
+            claimed.add(best.level)
 
         self._place_initial_orders()
 

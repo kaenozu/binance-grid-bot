@@ -5,6 +5,7 @@
 関連ファイル: src/binance_client.py, src/risk_manager.py, src/bot.py
 """
 
+import threading
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
@@ -68,6 +69,7 @@ class Portfolio:
         self.symbol = symbol
         self.quote_asset = quote_asset
         self._fee_rate = fee_rate
+        self._lock = threading.Lock()
 
         self.trades: list[Trade] = []
         self._max_trades = 10000
@@ -76,7 +78,10 @@ class Portfolio:
         self.stats.last_update = datetime.now()
 
         self._update_balance()
-        self.stats.initial_balance = self.stats.current_balance
+        if self.stats.current_balance > 0:
+            self.stats.initial_balance = self.stats.current_balance
+        else:
+            logger.error("残高取得失敗: initial_balance を設定できませんでした")
 
         logger.info(
             f"ポートフォリオ初期化: 初期残高={self.stats.initial_balance:.2f} {quote_asset}"
@@ -129,14 +134,19 @@ class Portfolio:
             grid_level=grid_level,
         )
 
-        self.trades.append(trade)
-        if len(self.trades) > self._max_trades:
-            unmatched_buys = [t for t in self.trades if t.side == "BUY" and not t.matched]
-            matched_trades = [t for t in self.trades if t.matched or t.side == "SELL"]
-            matched_to_keep = matched_trades[-(self._max_trades - len(unmatched_buys)) :]
-            self.trades = unmatched_buys + matched_to_keep
-        self.stats.total_trades += 1
-        self.stats.last_update = datetime.now()
+        with self._lock:
+            self.trades.append(trade)
+            if len(self.trades) > self._max_trades:
+                unmatched_buys = [t for t in self.trades if t.side == "BUY" and not t.matched]
+                evictable = [t for t in self.trades if t.side == "SELL" or t.matched]
+                keep_count = self._max_trades - len(unmatched_buys)
+                if keep_count > 0:
+                    matched_to_keep = evictable[-keep_count:]
+                else:
+                    matched_to_keep = []
+                self.trades = unmatched_buys + matched_to_keep
+            self.stats.total_trades += 1
+            self.stats.last_update = datetime.now()
 
         profit: Optional[float] = None
 
@@ -155,22 +165,25 @@ class Portfolio:
                 trade.profit = profit
                 buy_trade.matched = True
                 trade.matched = True
-                self.stats.realized_profit += profit
-                self.stats.settled_trades += 1
-                self.stats.total_profit = self.stats.realized_profit + self.stats.unrealized_profit
-
-                if profit > 0:
-                    self.stats.winning_trades += 1
-                else:
-                    self.stats.losing_trades += 1
-
-                if self.stats.settled_trades > 0:
-                    self.stats.win_rate = (
-                        self.stats.winning_trades / self.stats.settled_trades * 100
+                with self._lock:
+                    self.stats.realized_profit += profit
+                    self.stats.settled_trades += 1
+                    self.stats.total_profit = (
+                        self.stats.realized_profit + self.stats.unrealized_profit
                     )
-                self.stats.avg_profit_per_trade = (
-                    self.stats.realized_profit / self.stats.settled_trades
-                )
+
+                    if profit > 0:
+                        self.stats.winning_trades += 1
+                    else:
+                        self.stats.losing_trades += 1
+
+                    if self.stats.settled_trades > 0:
+                        self.stats.win_rate = (
+                            self.stats.winning_trades / self.stats.settled_trades * 100
+                        )
+                    self.stats.avg_profit_per_trade = (
+                        self.stats.realized_profit / self.stats.settled_trades
+                    )
 
                 logger.info(f"取引記録: グリッド {grid_level}, 利益={profit:.2f}")
 
@@ -207,19 +220,20 @@ class Portfolio:
         return None
 
     def calculate_unrealized_pnl(self, current_price: float):
-        """未実現損益を計算（手数料反映）"""
-        unrealized = 0.0
-        fee_rate = self._fee_rate
+        with self._lock:
+            unrealized = 0.0
+            fee_rate = self._fee_rate
 
-        for trade in self.trades:
-            if trade.side == "BUY" and not trade.matched:
-                gross = (current_price - trade.price) * trade.quantity
-                if fee_rate > 0:
-                    gross -= trade.price * trade.quantity * fee_rate
-                unrealized += gross
+            for trade in self.trades:
+                if trade.side == "BUY" and not trade.matched:
+                    gross = (current_price - trade.price) * trade.quantity
+                    if fee_rate > 0:
+                        gross -= trade.price * trade.quantity * fee_rate
+                        gross -= current_price * trade.quantity * fee_rate
+                    unrealized += gross
 
-        self.stats.unrealized_profit = unrealized
-        self.stats.total_profit = self.stats.realized_profit + unrealized
+            self.stats.unrealized_profit = unrealized
+            self.stats.total_profit = self.stats.realized_profit + unrealized
 
     def get_stats(self) -> PortfolioStats:
         """統計情報（キャッシュ）を返す"""

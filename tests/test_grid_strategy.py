@@ -5,7 +5,6 @@
 関連ファイル: src/grid_strategy.py, tests/conftest.py
 """
 
-import pytest
 from src.grid_strategy import GridStrategy
 
 

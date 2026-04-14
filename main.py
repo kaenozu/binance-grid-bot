@@ -41,10 +41,11 @@ def _reset_db():
     if os.path.isdir(export_dir):
         for f in os.listdir(export_dir):
             fp = os.path.join(export_dir, f)
-            os.remove(fp)
-            removed.append(fp)
+            if os.path.isfile(fp):
+                os.remove(fp)
+                removed.append(fp)
     if removed:
-        print(f"削除完了:")
+        print("削除完了:")
         for r in removed:
             print(f"  - {r}")
     else:
@@ -91,8 +92,8 @@ def main():
         print()
 
         try:
-            from src.multi_bot import MultiBot
             from src.api_weight import APIWeightTracker
+            from src.multi_bot import MultiBot
 
             tracker = APIWeightTracker()
             mb = MultiBot(symbols=symbols, weight_tracker=tracker)

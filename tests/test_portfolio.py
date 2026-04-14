@@ -6,7 +6,8 @@
 """
 
 import pytest
-from src.portfolio import Portfolio, Trade, PortfolioStats
+
+from src.portfolio import Portfolio
 
 
 class TestPortfolio:

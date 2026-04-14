@@ -6,6 +6,7 @@
 """
 
 import pytest
+
 from src.grid_strategy import GridStrategy
 
 
