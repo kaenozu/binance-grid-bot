@@ -153,10 +153,6 @@ class OrderManager:
                 if buy_order_id and buy_order_id in self._active_orders:
                     quantity = self._active_orders[buy_order_id].quantity
                 else:
-                    symbol_info = self.client.get_symbol_info(self.strategy.symbol)
-                    if not symbol_info:
-                        errors.append(f"グリッド {grid.level}: シンボル情報取得失敗")
-                        continue
                     quantity = self.strategy.get_order_quantity(
                         grid.buy_price, symbol_info["min_qty"], symbol_info["step_size"]
                     )
@@ -174,11 +170,7 @@ class OrderManager:
         return OrderPlacementResult(placed=placed_count, errors=errors)
 
     def check_order_fills(self) -> list[FillEvent]:
-        """約定済み注文をチェックし、新規約定があれば処理してクリーンアップ
-
-        Returns:
-            新規約定リスト
-        """
+        """約定済み注文をチェックし、新規約定があれば処理してクリーンアップ"""
         new_fills: list[FillEvent] = []
         filled_ids: set[int] = set()
 
@@ -232,11 +224,7 @@ class OrderManager:
         return new_fills
 
     def cancel_all_orders(self) -> int:
-        """すべてのアクティブ注文をキャンセル
-
-        Returns:
-            キャンセル件数
-        """
+        """すべてのアクティブ注文をキャンセル"""
         open_orders = self.client.get_open_orders(self.strategy.symbol)
         canceled_count = 0
 
@@ -285,19 +273,10 @@ class OrderManager:
 
     @staticmethod
     def _adjust_price(price: float, tick_size: float, side: str = "BUY") -> float:
-        """価格をtick_sizeの倍数に調整
-
-        Args:
-            price: 調整前価格
-            tick_size: 価格の刻み幅
-            side: 注文側（'BUY' or 'SELL'）
-                    BUY: tick_size以下に丸める（不利にならない）
-                    SELL: tick_size以上に丸める（不利にならない）
-        """
+        """価格をtick_sizeの倍数に調整（BUY: 切り下げ, SELL: 切り上げ）"""
         if side == "BUY":
             return math.floor(price / tick_size) * tick_size
-        else:  # SELL
-            return math.ceil(price / tick_size) * tick_size
+        return math.ceil(price / tick_size) * tick_size
 
     def _register_and_handle(
         self, order: dict, grid_level: int, side: str, price: float, quantity: float
