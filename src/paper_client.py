@@ -7,7 +7,6 @@
 
 import requests as requests_lib
 from typing import Optional
-from unittest.mock import MagicMock
 
 from src.binance_client import BinanceAPIError
 

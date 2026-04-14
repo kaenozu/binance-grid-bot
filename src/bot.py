@@ -123,11 +123,16 @@ class GridBot:
             logger.error(f"予期せぬエラー: {e}", exc_info=True)
             self.stop()
 
-    def _place_initial_orders(self):
-        """初期注文を配置"""
+    def _place_initial_orders(self) -> Optional[dict]:
+        """初期注文を配置
+
+        Returns:
+            使用したシンボル情報（失敗時はNone）
+        """
         logger.info("初期注文配置開始...")
         result = self.order_manager.place_grid_orders()
         logger.info(f"初期注文配置完了: {result.placed} 件")
+        return self.client.get_symbol_info(self.strategy.symbol)
 
     def _place_grid_orders_for_level(self, grid_level: int):
         """特定グリッドレベルの買い注文を配置（決済後）"""
@@ -157,36 +162,10 @@ class GridBot:
             if self.risk_manager.should_halt_trading(self.current_price):
                 logger.warning("リスク管理により取引を停止します")
                 self._emergency_stop()
-                self.consecutive_errors = 0  # 緊急停止時もエラーカウントをリセット
+                self.consecutive_errors = 0
                 return
 
-            new_fills = self.order_manager.check_order_fills()
-
-            for fill in new_fills:
-                profit = self.portfolio.record_trade(
-                    side=fill.side,
-                    price=fill.price,
-                    quantity=fill.quantity,
-                    order_id=fill.order_id,
-                    grid_level=fill.grid,
-                )
-
-                if fill.side == "BUY":
-                    self.risk_manager.record_position_open()
-                    grid = self.strategy.grids[fill.grid]
-                    if grid.sell_price is None:
-                        logger.warning(
-                            f"グリッド {fill.grid}: 最上位グリッドのため売り注文なし。"
-                            "手動での決済が必要です。"
-                        )
-                        continue
-                    logger.info(f"グリッド {fill.grid}: 買い約定、売り注文配置")
-                    self._place_sell_for_grid(fill.grid, fill.quantity)
-                elif fill.side == "SELL":
-                    self.risk_manager.record_position_close(profit or 0.0)
-                    logger.info(f"グリッド {fill.grid}: 決済完了、再注文配置")
-                    self._place_grid_orders_for_level(fill.grid)
-
+            self._process_fills()
             self.portfolio.calculate_unrealized_pnl(self.current_price)
             self.consecutive_errors = 0
 
@@ -195,33 +174,12 @@ class GridBot:
                 self._display_status()
                 self._last_status_time = now
 
-            persist_interval = Settings.PERSIST_INTERVAL
-            if now - self._last_persist_time >= persist_interval:
+            if now - self._last_persist_time >= Settings.PERSIST_INTERVAL:
                 self._persist_state()
                 self._last_persist_time = now
 
             if not self.strategy.is_within_grid_range(self.current_price):
-                logger.warning(
-                    f"価格 {self.current_price:.2f} がグリッド範囲外。動的シフトを実行します。"
-                )
-                self.order_manager.cancel_all_orders()
-                self.strategy.shift_grids()
-                for grid in self.strategy.grids:
-                    grid.buy_order_id = None
-                    grid.sell_order_id = None
-                self._place_initial_orders()
-                symbol_info = self.client.get_symbol_info(self.strategy.symbol)
-                open_positions = [
-                    g for g in self.strategy.grids if g.position_filled and g.sell_price
-                ]
-                for grid in open_positions:
-                    qty = self.strategy.get_order_quantity(
-                        grid.buy_price,
-                        symbol_info["min_qty"] if symbol_info else 0,
-                        symbol_info["step_size"] if symbol_info else 0,
-                    )
-                    if qty > 0:
-                        self._place_sell_for_grid(grid.level, qty)
+                self._handle_grid_shift()
 
         except Exception as e:
             self.consecutive_errors += 1
@@ -235,6 +193,56 @@ class GridBot:
                     f"連続エラーが{Settings.MAX_CONSECUTIVE_ERRORS}回に到達。ボットを停止します。"
                 )
                 self.stop()
+
+    def _process_fills(self):
+        """約定イベントを処理"""
+        new_fills = self.order_manager.check_order_fills()
+
+        for fill in new_fills:
+            profit = self.portfolio.record_trade(
+                side=fill.side,
+                price=fill.price,
+                quantity=fill.quantity,
+                order_id=fill.order_id,
+                grid_level=fill.grid,
+            )
+
+            if fill.side == "BUY":
+                self.risk_manager.record_position_open()
+                grid = self.strategy.grids[fill.grid]
+                if grid.sell_price is None:
+                    logger.warning(
+                        f"グリッド {fill.grid}: 最上位グリッドのため売り注文なし。"
+                        "手動での決済が必要です。"
+                    )
+                    continue
+                logger.info(f"グリッド {fill.grid}: 買い約定、売り注文配置")
+                self._place_sell_for_grid(fill.grid, fill.quantity)
+            elif fill.side == "SELL":
+                self.risk_manager.record_position_close(profit or 0.0)
+                logger.info(f"グリッド {fill.grid}: 決済完了、再注文配置")
+                self._place_grid_orders_for_level(fill.grid)
+
+    def _handle_grid_shift(self):
+        """価格がグリッド範囲外の場合、グリッドを再計算して注文を再配置"""
+        logger.warning(f"価格 {self.current_price:.2f} がグリッド範囲外。動的シフトを実行します。")
+        self.order_manager.cancel_all_orders()
+        self.strategy.shift_grids()
+        for grid in self.strategy.grids:
+            grid.buy_order_id = None
+            grid.sell_order_id = None
+
+        symbol_info = self._place_initial_orders()
+
+        open_positions = [g for g in self.strategy.grids if g.position_filled and g.sell_price]
+        for grid in open_positions:
+            qty = self.strategy.get_order_quantity(
+                grid.buy_price,
+                symbol_info["min_qty"] if symbol_info else 0,
+                symbol_info["step_size"] if symbol_info else 0,
+            )
+            if qty > 0:
+                self._place_sell_for_grid(grid.level, qty)
 
     def _display_status(self):
         """ステータスをCUIに表示"""
