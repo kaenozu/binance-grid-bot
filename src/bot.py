@@ -60,7 +60,7 @@ class GridBot:
         )
 
         self.order_manager = OrderManager(self.client, self.strategy)
-        self.risk_manager = RiskManager(self.client, self.strategy, self.current_price)
+        self.risk_manager = RiskManager(self.client, self.strategy)
         self.portfolio = Portfolio(self.client, self.symbol, fee_rate=Settings.TRADING_FEE_RATE)
 
         self.is_running = False
