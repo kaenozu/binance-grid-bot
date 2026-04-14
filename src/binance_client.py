@@ -10,8 +10,10 @@ import hashlib
 import hmac
 from typing import Optional
 from urllib.parse import urlencode
+from urllib3.util.retry import Retry
 
 import requests
+from requests.adapters import HTTPAdapter
 from config.settings import Settings
 from utils.logger import setup_logger
 
@@ -46,6 +48,11 @@ class BinanceClient:
                 "X-MBX-APIKEY": self.api_key,
                 "Content-Type": "application/json",
             }
+        )
+        # urllib3 の内部リトライを無効化（我々のリトライループに制御を委譲）
+        self.session.mount(
+            "https://",
+            HTTPAdapter(max_retries=Retry(total=0, connect=0, read=0, redirect=0)),
         )
 
         logger.info(f"Binance クライアント初期化完了 (Testnet: {Settings.USE_TESTNET})")
