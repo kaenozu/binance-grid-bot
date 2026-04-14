@@ -17,6 +17,20 @@ logger = setup_logger("main")
 DB_PATH = os.path.join("data", "bot_state.db")
 
 
+def _confirm_production_mode():
+    """本番モードの確認"""
+    if Settings.USE_TESTNET:
+        return
+    print("警告: 本番モードで実行します")
+    if not sys.stdin.isatty():
+        print("非対話環境のため本番モードを中止します")
+        sys.exit(1)
+    confirm = input("続行しますか？ (yes/no): ").strip().lower()
+    if confirm != "yes":
+        print("中止しました")
+        sys.exit(0)
+
+
 def _reset_db():
     """DBとエクスポートを削除"""
     removed = []
@@ -71,15 +85,7 @@ def main():
         print(f"マルチボットモード: {', '.join(symbols)}")
         print()
 
-        if not Settings.USE_TESTNET:
-            print("警告: 本番モードで実行します")
-            if not sys.stdin.isatty():
-                print("非対話環境のため本番モードを中止します")
-                sys.exit(1)
-            confirm = input("続行しますか？ (yes/no): ").strip().lower()
-            if confirm != "yes":
-                print("中止しました")
-                sys.exit(0)
+        _confirm_production_mode()
 
         print("ボットを起動中...")
         print()
@@ -104,15 +110,7 @@ def main():
         print(f"  Testnet: {'Yes' if Settings.USE_TESTNET else 'No (Production)'}")
         print()
 
-        if not Settings.USE_TESTNET:
-            print("警告: 本番モードで実行します")
-            if not sys.stdin.isatty():
-                print("非対話環境のため本番モードを中止します")
-                sys.exit(1)
-            confirm = input("続行しますか？ (yes/no): ").strip().lower()
-            if confirm != "yes":
-                print("中止しました")
-                sys.exit(0)
+        _confirm_production_mode()
 
         print("ボットを起動中...")
         print()
