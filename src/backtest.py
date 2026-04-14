@@ -24,9 +24,7 @@ class BacktestDataFetcher:
     BINANCE_KLINE_URL = "https://api.binance.com/api/v3/klines"
 
     @classmethod
-    def fetch_klines(
-        cls, symbol: str, interval: str = "1h", limit: int = 500
-    ) -> list[dict]:
+    def fetch_klines(cls, symbol: str, interval: str = "1h", limit: int = 500) -> list[dict]:
         """K線データを取得
 
         Args:
@@ -144,12 +142,8 @@ class BacktestEngine:
         initial_price = klines[0]["close"]
 
         range_factor = Settings.GRID_RANGE_FACTOR
-        lower = (
-            self.lower_price if self.lower_price else initial_price * (1 - range_factor)
-        )
-        upper = (
-            self.upper_price if self.upper_price else initial_price * (1 + range_factor)
-        )
+        lower = self.lower_price if self.lower_price else initial_price * (1 - range_factor)
+        upper = self.upper_price if self.upper_price else initial_price * (1 + range_factor)
 
         self.strategy = GridStrategy(
             symbol=self.symbol,
@@ -220,18 +214,17 @@ class BacktestEngine:
                         min_notional=self.min_notional,
                     )
                     self.positions[grid.level] = quantity
-                    logger.debug(
-                        f"買い約定: グリッド {grid.level} @ {grid.buy_price:.2f}"
-                    )
+                    logger.debug(f"買い約定: グリッド {grid.level} @ {grid.buy_price:.2f}")
 
             if grid.level in self.positions:
                 buy_price = self.buy_orders.get(grid.level, grid.buy_price)
                 if grid.sell_price and high >= grid.sell_price:
                     quantity = self.positions.pop(grid.level)
-                    gross_profit = (grid.sell_price - buy_price) * quantity
-                    buy_fee = buy_price * quantity * self.fee_rate
-                    sell_fee = grid.sell_price * quantity * self.fee_rate
-                    profit = gross_profit - buy_fee - sell_fee
+                    from src.fee import calculate_net_profit
+
+                    profit, _, _ = calculate_net_profit(
+                        buy_price, grid.sell_price, quantity, self.fee_rate
+                    )
                     self.total_profit += profit
                     self.total_trades += 1
 
@@ -261,11 +254,7 @@ class BacktestEngine:
             qty * current_price * self.fee_rate for qty in self.positions.values()
         )
         cash = self.investment_amount - total_cost
-        asset_value = (
-            sum(self.positions.values()) * current_price
-            - buy_fees
-            - estimated_sell_fees
-        )
+        asset_value = sum(self.positions.values()) * current_price - buy_fees - estimated_sell_fees
 
         return cash + asset_value + self.total_profit
 
