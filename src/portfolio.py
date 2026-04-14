@@ -5,12 +5,12 @@
 関連ファイル: src/binance_client.py, src/risk_manager.py, src/bot.py
 """
 
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 
-from src.binance_client import BinanceClient
 from src import persistence as persistence_module
+from src.binance_client import BinanceClient
 from utils.logger import setup_logger
 
 logger = setup_logger("portfolio")
@@ -143,13 +143,15 @@ class Portfolio:
         if side == "SELL":
             buy_trade = self.find_matching_buy_trade(grid_level)
             if buy_trade:
-                profit = (price - buy_trade.price) * quantity
-                fee_rate = self._fee_rate
-                if fee_rate > 0 and buy_trade:
-                    buy_fee = buy_trade.price * quantity * fee_rate
-                    sell_fee = price * quantity * fee_rate
-                    profit = profit - buy_fee - sell_fee
+                if self._fee_rate > 0 and buy_trade:
+                    from src.fee import calculate_net_profit
+
+                    profit, buy_fee, sell_fee = calculate_net_profit(
+                        buy_trade.price, price, quantity, self._fee_rate
+                    )
                     self.stats.total_fees += buy_fee + sell_fee
+                else:
+                    profit = (price - buy_trade.price) * quantity
                 trade.profit = profit
                 buy_trade.matched = True
                 trade.matched = True

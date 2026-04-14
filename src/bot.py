@@ -2,24 +2,23 @@
 ファイルパス: src/bot.py
 概要: グリッド取引ボット メインループ
 説明: 価格監視、注文管理、リスク管理、ステータス表示、永続化、エクスポートを統合
-関連ファイル: src/binance_client.py, src/grid_strategy.py, src/order_manager.py, src/risk_manager.py, src/portfolio.py, src/persistence.py, src/order_sync.py, src/exporter.py
+関連ファイル: src/binance_client.py, src/grid_strategy.py, src/order_manager.py,
+  src/risk_manager.py, src/portfolio.py, src/persistence.py, src/order_sync.py, src/exporter.py
 """
 
 import time
 import traceback
-from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 from config.settings import Settings
+from src import order_sync, persistence
+from src.api_weight import APIWeightTracker
 from src.binance_client import BinanceClient
 from src.grid_strategy import GridStrategy
 from src.order_manager import OrderManager
-from src.risk_manager import RiskManager
 from src.portfolio import Portfolio
-from src import persistence
-from src import order_sync
-from src import exporter
+from src.risk_manager import RiskManager
+from src.ws_client import BinanceWebSocketClient
 from utils.logger import setup_logger
 
 logger = setup_logger("bot")
@@ -28,20 +27,28 @@ logger = setup_logger("bot")
 class GridBot:
     """グリッド取引ボット"""
 
-    def __init__(self):
+    def __init__(
+        self,
+        symbol: str | None = None,
+        ws_client: BinanceWebSocketClient | None = None,
+        weight_tracker: APIWeightTracker | None = None,
+    ):
         errors = Settings.validate()
         if errors:
             for error in errors:
                 logger.error(f"設定エラー: {error}")
             raise ValueError(f"設定エラーがあります: {errors}")
 
-        self.client = BinanceClient()
+        self.symbol = symbol or Settings.TRADING_SYMBOL
+        self.ws_client = ws_client
 
-        self.current_price = self.client.get_symbol_price(Settings.TRADING_SYMBOL)
+        self.client = BinanceClient(weight_tracker=weight_tracker)
+
+        self.current_price = self.client.get_symbol_price(self.symbol)
         logger.info(f"現在価格: {self.current_price:.2f}")
 
         self.strategy = GridStrategy(
-            symbol=Settings.TRADING_SYMBOL,
+            symbol=self.symbol,
             current_price=self.current_price,
             lower_price=Settings.LOWER_PRICE,
             upper_price=Settings.UPPER_PRICE,
@@ -50,10 +57,8 @@ class GridBot:
         )
 
         self.order_manager = OrderManager(self.client, self.strategy)
-        self.risk_manager = RiskManager(self.client, self.strategy, self.current_price)
-        self.portfolio = Portfolio(
-            self.client, Settings.TRADING_SYMBOL, fee_rate=Settings.TRADING_FEE_RATE
-        )
+        self.risk_manager = RiskManager(self.client, self.strategy)
+        self.portfolio = Portfolio(self.client, self.symbol, fee_rate=Settings.TRADING_FEE_RATE)
 
         self.is_running = False
         self.consecutive_errors = 0
@@ -67,7 +72,7 @@ class GridBot:
 
     def _restore_state(self):
         """永続化された状態を復元"""
-        grid_states = persistence.load_grid_states(Settings.TRADING_SYMBOL)
+        grid_states = persistence.load_grid_states(self.symbol)
         if grid_states:
             for gs in grid_states:
                 level = gs["level"]
@@ -96,7 +101,7 @@ class GridBot:
     def _persist_state(self):
         """現在の状態を永続化"""
         try:
-            persistence.save_grid_states(Settings.TRADING_SYMBOL, self.strategy.grids)
+            persistence.save_grid_states(self.symbol, self.strategy.grids)
             persistence.save_portfolio_stats(self.portfolio.stats)
         except Exception as e:
             logger.error(f"状態永続化失敗: {e}")
@@ -109,6 +114,9 @@ class GridBot:
 
         self.is_running = True
         self._last_status_time = time.time()
+
+        if self.ws_client:
+            self.ws_client.start_price_stream(self.symbol)
 
         self._place_initial_orders()
 
@@ -123,11 +131,16 @@ class GridBot:
             logger.error(f"予期せぬエラー: {e}", exc_info=True)
             self.stop()
 
-    def _place_initial_orders(self):
-        """初期注文を配置"""
+    def _place_initial_orders(self) -> Optional[dict]:
+        """初期注文を配置
+
+        Returns:
+            使用したシンボル情報（失敗時はNone）
+        """
         logger.info("初期注文配置開始...")
         result = self.order_manager.place_grid_orders()
         logger.info(f"初期注文配置完了: {result.placed} 件")
+        return self.client.get_symbol_info(self.strategy.symbol)
 
     def _place_grid_orders_for_level(self, grid_level: int):
         """特定グリッドレベルの買い注文を配置（決済後）"""
@@ -151,42 +164,20 @@ class GridBot:
     def _tick(self) -> None:
         """1 ティック処理"""
         try:
-            self.current_price = self.client.get_symbol_price(Settings.TRADING_SYMBOL)
+            ws_price = self.ws_client.current_price if self.ws_client else None
+            if ws_price is not None:
+                self.current_price = ws_price
+            else:
+                self.current_price = self.client.get_symbol_price(self.symbol)
             self.strategy.update_current_price(self.current_price)
 
             if self.risk_manager.should_halt_trading(self.current_price):
                 logger.warning("リスク管理により取引を停止します")
                 self._emergency_stop()
-                self.consecutive_errors = 0  # 緊急停止時もエラーカウントをリセット
+                self.consecutive_errors = 0
                 return
 
-            new_fills = self.order_manager.check_order_fills()
-
-            for fill in new_fills:
-                profit = self.portfolio.record_trade(
-                    side=fill.side,
-                    price=fill.price,
-                    quantity=fill.quantity,
-                    order_id=fill.order_id,
-                    grid_level=fill.grid,
-                )
-
-                if fill.side == "BUY":
-                    self.risk_manager.record_position_open()
-                    grid = self.strategy.grids[fill.grid]
-                    if grid.sell_price is None:
-                        logger.warning(
-                            f"グリッド {fill.grid}: 最上位グリッドのため売り注文なし。"
-                            "手動での決済が必要です。"
-                        )
-                        continue
-                    logger.info(f"グリッド {fill.grid}: 買い約定、売り注文配置")
-                    self._place_sell_for_grid(fill.grid, fill.quantity)
-                elif fill.side == "SELL":
-                    self.risk_manager.record_position_close(profit or 0.0)
-                    logger.info(f"グリッド {fill.grid}: 決済完了、再注文配置")
-                    self._place_grid_orders_for_level(fill.grid)
-
+            self._process_fills()
             self.portfolio.calculate_unrealized_pnl(self.current_price)
             self.consecutive_errors = 0
 
@@ -195,38 +186,18 @@ class GridBot:
                 self._display_status()
                 self._last_status_time = now
 
-            persist_interval = Settings.PERSIST_INTERVAL
-            if now - self._last_persist_time >= persist_interval:
+            if now - self._last_persist_time >= Settings.PERSIST_INTERVAL:
                 self._persist_state()
                 self._last_persist_time = now
 
             if not self.strategy.is_within_grid_range(self.current_price):
-                logger.warning(
-                    f"価格 {self.current_price:.2f} がグリッド範囲外。動的シフトを実行します。"
-                )
-                self.order_manager.cancel_all_orders()
-                self.strategy.shift_grids()
-                for grid in self.strategy.grids:
-                    grid.buy_order_id = None
-                    grid.sell_order_id = None
-                self._place_initial_orders()
-                symbol_info = self.client.get_symbol_info(self.strategy.symbol)
-                open_positions = [
-                    g for g in self.strategy.grids if g.position_filled and g.sell_price
-                ]
-                for grid in open_positions:
-                    qty = self.strategy.get_order_quantity(
-                        grid.buy_price,
-                        symbol_info["min_qty"] if symbol_info else 0,
-                        symbol_info["step_size"] if symbol_info else 0,
-                    )
-                    if qty > 0:
-                        self._place_sell_for_grid(grid.level, qty)
+                self._handle_grid_shift()
 
         except Exception as e:
             self.consecutive_errors += 1
             logger.error(
-                f"ティック処理エラー ({self.consecutive_errors}/{Settings.MAX_CONSECUTIVE_ERRORS}): {e}"
+                f"ティック処理エラー ({self.consecutive_errors}/"
+                f"{Settings.MAX_CONSECUTIVE_ERRORS}): {e}"
             )
             logger.error(f"スタックトレース:\n{traceback.format_exc()}")
 
@@ -236,136 +207,102 @@ class GridBot:
                 )
                 self.stop()
 
-    def _display_status(self):
-        """ステータスをCUIに表示"""
-        stats = self.portfolio.refresh_stats()
-        grid_status = self.strategy.grid_status
-        risk_status = self.risk_manager.risk_status
+    def _process_fills(self):
+        """約定イベントを処理"""
+        new_fills = self.order_manager.check_order_fills()
 
-        print("\n" + "=" * 70)
-        print(f"グリッドボット ステータス - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print("=" * 70)
-        print(f"取引ペア: {Settings.TRADING_SYMBOL}")
-        print(f"現在価格: {self.current_price:.2f}")
-        print(f"価格範囲: {grid_status['price_range']}")
-        print(f"グリッド数: {grid_status['total_grids']} (間隔: {grid_status['grid_spacing']:.2f})")
-        print(f"ポジション: {grid_status['filled_positions']}/{grid_status['total_grids']}")
-        print("-" * 70)
-        print(f"初期残高: {stats.initial_balance:.2f} USDT")
-        print(f"現在残高: {stats.current_balance:.2f} USDT")
-        print(f"実現利益: {stats.realized_profit:+.2f} USDT")
-        print(f"未実現利益: {stats.unrealized_profit:+.2f} USDT")
-        print(f"累計手数料: {stats.total_fees:.2f} USDT")
-        print(f"総利益: {stats.total_profit:+.2f} USDT")
-        print("-" * 70)
-        print(f"取引回数: {stats.total_trades}")
-        print(f"勝率: {stats.win_rate:.1f}%")
-        print(f"損切りライン: {risk_status['stop_loss_price']:.2f}")
-        print(f"ポジション: {risk_status['current_positions']}/{risk_status['max_positions']}")
-        print("=" * 70)
-        print("Ctrl+C で停止")
+        for fill in new_fills:
+            profit = self.portfolio.record_trade(
+                side=fill.side,
+                price=fill.price,
+                quantity=fill.quantity,
+                order_id=fill.order_id,
+                grid_level=fill.grid,
+            )
+
+            if fill.side == "BUY":
+                self.risk_manager.record_position_open()
+                grid = self.strategy.grids[fill.grid]
+                if grid.sell_price is None:
+                    logger.warning(
+                        f"グリッド {fill.grid}: 最上位グリッドのため売り注文なし。"
+                        "手動での決済が必要です。"
+                    )
+                    continue
+                logger.info(f"グリッド {fill.grid}: 買い約定、売り注文配置")
+                self._place_sell_for_grid(fill.grid, fill.quantity)
+            elif fill.side == "SELL":
+                self.risk_manager.record_position_close(profit or 0.0)
+                logger.info(f"グリッド {fill.grid}: 決済完了、再注文配置")
+                self._place_grid_orders_for_level(fill.grid)
+
+    def _handle_grid_shift(self):
+        """価格がグリッド範囲外の場合、グリッドを再計算して注文を再配置"""
+        logger.warning(f"価格 {self.current_price:.2f} がグリッド範囲外。動的シフトを実行します。")
+        filled_count = sum(1 for g in self.strategy.grids if g.position_filled)
+
+        self.order_manager.cancel_all_orders()
+        self.strategy.shift_grids()
+
+        for i in range(min(filled_count, len(self.strategy.grids))):
+            self.strategy.grids[i].position_filled = True
+
+        self._place_initial_orders()
+
+    def get_summary(self) -> dict:
+        stats = self.portfolio.refresh_stats()
+        filled = sum(1 for g in self.strategy.grids if g.position_filled)
+        return {
+            "running": self.is_running,
+            "price": self.current_price,
+            "grids": len(self.strategy.grids),
+            "filled": filled,
+            "total_profit": stats.total_profit,
+            "realized_profit": stats.realized_profit,
+            "unrealized_profit": stats.unrealized_profit,
+        }
+
+    def _display_status(self):
+        from src.bot_display import display_status
+
+        stats = self.portfolio.refresh_stats()
+        display_status(
+            self.symbol,
+            self.current_price,
+            self.strategy.grid_status,
+            stats,
+            self.risk_manager.risk_status,
+        )
 
     def _export_on_stop(self):
-        """停止時にトレード履歴をエクスポート"""
-        if not self.portfolio.trades:
-            return
-        try:
-            export_dir = Path("data") / "exports"
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            csv_path = export_dir / f"trades_{timestamp}.csv"
-            json_path = export_dir / f"trades_{timestamp}.json"
-            count = exporter.export_trades_csv(self.portfolio.trades, csv_path)
-            exporter.export_trades_json(self.portfolio.trades, json_path)
-            logger.info(f"トレード履歴をエクスポート: {count} 件 -> {export_dir}")
-        except Exception as e:
-            logger.error(f"エクスポート失敗: {e}")
+        from src.bot_shutdown import export_on_stop
+
+        export_on_stop(self.portfolio)
 
     def _emergency_stop(self):
-        """緊急停止処理（オープンポジションを成行決済して終了）"""
-        logger.warning("緊急停止処理開始...")
-        self._persist_state()
+        from src.bot_shutdown import emergency_stop
+
         self.is_running = False
-        self.order_manager.cancel_all_orders()
-        self._close_open_positions()
-        print(self.portfolio.generate_report())
-        logger.info("緊急停止完了")
+        emergency_stop(
+            self.client, self.strategy, self.order_manager, self.portfolio, self._persist_state
+        )
 
     def _close_open_positions(self):
-        """オープンポジションを成行売却"""
-        open_positions = [g for g in self.strategy.grids if g.position_filled]
-        if not open_positions:
-            return
+        from src.bot_shutdown import close_open_positions
 
-        logger.warning(f"オープンポジション {len(open_positions)} 件を成行決済します")
-        symbol_info = self.client.get_symbol_info(self.strategy.symbol)
-        base_asset = (
-            symbol_info["base_asset"] if symbol_info else self.strategy.symbol.replace("USDT", "")
-        )
-        step_size = symbol_info["step_size"] if symbol_info else 0
-        min_qty = symbol_info["min_qty"] if symbol_info else 0
-        try:
-            balances = self.client.get_account_balance()
-        except Exception as e:
-            logger.error(f"残高取得失敗: {e}")
-            return
-
-        if base_asset not in balances:
-            logger.error(f"残高がありません: {base_asset}")
-            return
-
-        available = balances[base_asset]["free"]
-        if available <= 0:
-            logger.warning(f"{base_asset} の残高がありません")
-            return
-
-        for grid in open_positions:
-            if available <= 0:
-                break
-            try:
-                qty_per_grid = self.strategy.get_order_quantity(
-                    grid.buy_price, min_qty=min_qty, step_size=step_size
-                )
-                sell_qty = min(available, qty_per_grid)
-                if sell_qty <= 0:
-                    continue
-
-                result = self.client.place_order(
-                    symbol=self.strategy.symbol,
-                    side="SELL",
-                    quantity=sell_qty,
-                    price=None,
-                )
-                filled_qty = float(result.get("executedQty", result.get("origQty", sell_qty)))
-                filled_price = float(result.get("avgPrice") or result.get("price", 0))
-                self.portfolio.record_trade(
-                    side="SELL",
-                    price=filled_price,
-                    quantity=filled_qty,
-                    order_id=result["orderId"],
-                    grid_level=grid.level,
-                )
-                available -= filled_qty
-                grid.position_filled = False
-                logger.info(f"グリッド {grid.level}: 緊急成行決済 {filled_qty} @ {filled_price}")
-            except Exception as e:
-                logger.error(f"グリッド {grid.level}: 緊急決済失敗: {e}")
+        close_open_positions(self.client, self.strategy, self.portfolio)
 
     def stop(self):
-        """ボット停止"""
-        logger.info("ボット停止中...")
+        from config.settings import Settings
+        from src.bot_shutdown import stop_bot
+
         self.is_running = False
-
-        self._persist_state()
-
-        canceled = self.order_manager.cancel_all_orders()
-        logger.info(f"キャンセル完了: {canceled} 件")
-
-        if Settings.CLOSE_ON_STOP:
-            self._close_open_positions()
-
-        report = self.portfolio.generate_report()
-        logger.info("\n" + report)
-
-        self._export_on_stop()
-
-        logger.info("ボット停止完了")
+        stop_bot(
+            self.client,
+            self.strategy,
+            self.order_manager,
+            self.portfolio,
+            self._persist_state,
+            Settings.CLOSE_ON_STOP,
+            self.ws_client,
+        )

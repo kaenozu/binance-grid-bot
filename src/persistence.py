@@ -98,8 +98,9 @@ def save_trade(
     """トレードをDBに保存"""
     conn = _get_connection()
     conn.execute(
-        """INSERT INTO trades (timestamp, symbol, side, price, quantity, order_id, grid_level, profit, matched)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        "INSERT INTO trades "
+        "(timestamp, symbol, side, price, quantity, order_id, "
+        "grid_level, profit, matched) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             timestamp.isoformat(),
             symbol,
@@ -127,8 +128,9 @@ def save_grid_states(symbol: str, grids: list):
     conn.execute("DELETE FROM grid_states WHERE symbol = ?", (symbol,))
     for g in grids:
         conn.execute(
-            """INSERT INTO grid_states (symbol, grid_level, buy_price, sell_price, buy_order_id, sell_order_id, position_filled)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            "INSERT INTO grid_states "
+            "(symbol, grid_level, buy_price, sell_price, buy_order_id, "
+            "sell_order_id, position_filled) VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 symbol,
                 g.level,
@@ -148,10 +150,12 @@ def save_portfolio_stats(stats):
     conn = _get_connection()
     conn.execute("DELETE FROM portfolio_stats WHERE id = 1")
     conn.execute(
-        """INSERT INTO portfolio_stats (id, initial_balance, current_balance, total_profit, realized_profit,
-           unrealized_profit, total_trades, winning_trades, losing_trades, settled_trades, win_rate,
-           avg_profit_per_trade, total_fees, start_time, last_update)
-           VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        "INSERT INTO portfolio_stats "
+        "(id, initial_balance, current_balance, total_profit, realized_profit, "
+        "unrealized_profit, total_trades, winning_trades, losing_trades, "
+        "settled_trades, win_rate, avg_profit_per_trade, total_fees, "
+        "start_time, last_update) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, "
+        "?, ?, ?, ?, ?, ?)",
         (
             stats.initial_balance,
             stats.current_balance,
@@ -180,7 +184,9 @@ def load_grid_states(symbol: str) -> Optional[list[dict]]:
     conn = _get_connection()
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        "SELECT grid_level, buy_price, sell_price, buy_order_id, sell_order_id, position_filled FROM grid_states WHERE symbol = ? ORDER BY grid_level",
+        "SELECT grid_level, buy_price, sell_price, buy_order_id, "
+        "sell_order_id, position_filled FROM grid_states "
+        "WHERE symbol = ? ORDER BY grid_level",
         (symbol,),
     ).fetchall()
     conn.close()
@@ -255,26 +261,14 @@ def load_trades() -> list[dict]:
     ]
 
 
-STATS_FIELDS = [
-    "initial_balance",
-    "current_balance",
-    "total_profit",
-    "realized_profit",
-    "unrealized_profit",
-    "total_trades",
-    "winning_trades",
-    "losing_trades",
-    "settled_trades",
-    "win_rate",
-    "avg_profit_per_trade",
-    "total_fees",
-    "start_time",
-    "last_update",
-]
+def _get_stats_fields() -> list[str]:
+    from src.portfolio import PortfolioStats
+
+    return [f for f in PortfolioStats.__dataclass_fields__.keys()]
 
 
 def restore_stats_to(stats_obj, data: dict):
     """PortfolioStats オブジェクトにDB値を一括復元"""
-    for field in STATS_FIELDS:
+    for field in _get_stats_fields():
         if field in data:
             setattr(stats_obj, field, data[field])

@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Optional
 
 import requests
+
 from config.settings import Settings
 from src.grid_strategy import GridStrategy
 from src.portfolio import PortfolioStats
@@ -24,9 +25,7 @@ class BacktestDataFetcher:
     BINANCE_KLINE_URL = "https://api.binance.com/api/v3/klines"
 
     @classmethod
-    def fetch_klines(
-        cls, symbol: str, interval: str = "1h", limit: int = 500
-    ) -> list[dict]:
+    def fetch_klines(cls, symbol: str, interval: str = "1h", limit: int = 500) -> list[dict]:
         """K線データを取得
 
         Args:
@@ -144,12 +143,8 @@ class BacktestEngine:
         initial_price = klines[0]["close"]
 
         range_factor = Settings.GRID_RANGE_FACTOR
-        lower = (
-            self.lower_price if self.lower_price else initial_price * (1 - range_factor)
-        )
-        upper = (
-            self.upper_price if self.upper_price else initial_price * (1 + range_factor)
-        )
+        lower = self.lower_price if self.lower_price else initial_price * (1 - range_factor)
+        upper = self.upper_price if self.upper_price else initial_price * (1 + range_factor)
 
         self.strategy = GridStrategy(
             symbol=self.symbol,
@@ -193,6 +188,7 @@ class BacktestEngine:
 
     def _place_initial_orders(self):
         """初期買い注文を記録"""
+        assert self.strategy is not None
         for grid in self.strategy.get_active_buy_grids():
             self.buy_orders[grid.level] = grid.buy_price
 
@@ -206,6 +202,7 @@ class BacktestEngine:
         low = kline["low"]
         filled_this_kline: set[int] = set()  # このK線で売り約定したグリッド
 
+        assert self.strategy is not None
         for grid in self.strategy.grids:
             # 売り約定済みのグリッドはスキップ
             if grid.level in filled_this_kline:
@@ -220,18 +217,17 @@ class BacktestEngine:
                         min_notional=self.min_notional,
                     )
                     self.positions[grid.level] = quantity
-                    logger.debug(
-                        f"買い約定: グリッド {grid.level} @ {grid.buy_price:.2f}"
-                    )
+                    logger.debug(f"買い約定: グリッド {grid.level} @ {grid.buy_price:.2f}")
 
             if grid.level in self.positions:
                 buy_price = self.buy_orders.get(grid.level, grid.buy_price)
                 if grid.sell_price and high >= grid.sell_price:
                     quantity = self.positions.pop(grid.level)
-                    gross_profit = (grid.sell_price - buy_price) * quantity
-                    buy_fee = buy_price * quantity * self.fee_rate
-                    sell_fee = grid.sell_price * quantity * self.fee_rate
-                    profit = gross_profit - buy_fee - sell_fee
+                    from src.fee import calculate_net_profit
+
+                    profit, _, _ = calculate_net_profit(
+                        buy_price, grid.sell_price, quantity, self.fee_rate
+                    )
                     self.total_profit += profit
                     self.total_trades += 1
 
@@ -240,7 +236,8 @@ class BacktestEngine:
                     filled_this_kline.add(grid.level)
 
                     logger.debug(
-                        f"売り約定: グリッド {grid.level} @ {grid.sell_price:.2f}, 利益={profit:.2f}"
+                        f"売り約定: グリッド {grid.level} @ "
+                        f"{grid.sell_price:.2f}, 利益={profit:.2f}"
                     )
 
     def _calculate_portfolio_value(self, current_price: float) -> float:
@@ -261,16 +258,13 @@ class BacktestEngine:
             qty * current_price * self.fee_rate for qty in self.positions.values()
         )
         cash = self.investment_amount - total_cost
-        asset_value = (
-            sum(self.positions.values()) * current_price
-            - buy_fees
-            - estimated_sell_fees
-        )
+        asset_value = sum(self.positions.values()) * current_price - buy_fees - estimated_sell_fees
 
         return cash + asset_value + self.total_profit
 
     def _generate_report(self, klines: list[dict]) -> dict:
         """レポートを生成"""
+        assert self.strategy is not None
         start_price = klines[0]["close"]
         end_price = klines[-1]["close"]
         price_change = (end_price - start_price) / start_price * 100
@@ -286,7 +280,7 @@ class BacktestEngine:
             "end_price": end_price,
             "price_change_percent": price_change,
             "grid_count": self.grid_count,
-            "grid_range": f"{self.strategy.lower_price:.2f} - {self.strategy.upper_price:.2f}",
+            "grid_range": (f"{self.strategy.lower_price:.2f} - {self.strategy.upper_price:.2f}"),
             "total_trades": self.total_trades,
             "total_profit": self.total_profit,
             "roi_percent": roi,

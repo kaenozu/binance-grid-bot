@@ -61,6 +61,12 @@ class OrderManager:
         """アクティブ注文の読み取り専用ビュー"""
         return dict(self._active_orders)
 
+    def get_active_order_ids(self) -> set[int]:
+        return set(self._active_orders.keys())
+
+    def remove_order(self, order_id: int) -> None:
+        self._active_orders.pop(order_id, None)
+
     def register_order(
         self,
         order_id: int,
@@ -82,44 +88,60 @@ class OrderManager:
         self._active_orders[order_id] = order
         return order
 
+    def _place_order(
+        self, grid_level: int, side: str, price: float, quantity: float | None = None
+    ) -> dict | None:
+        """共通注文配置ロジック"""
+        symbol_info = self.client.get_symbol_info(self.strategy.symbol)
+        if not symbol_info:
+            return None
+
+        if quantity is None:
+            grid = self.strategy.grids[grid_level]
+            quantity = self.strategy.get_order_quantity(
+                grid.buy_price, symbol_info["min_qty"], symbol_info["step_size"]
+            )
+
+        if quantity <= 0:
+            return None
+
+        adjusted_price = self._adjust_price(price, symbol_info["tick_size"], side=side)
+        order = self.client.place_order(
+            symbol=self.strategy.symbol,
+            side=side,
+            quantity=quantity,
+            price=adjusted_price,
+        )
+        self._register_and_handle(order, grid_level, side, adjusted_price, quantity)
+        return order
+
     def place_grid_orders(self) -> OrderPlacementResult:
         """グリッド注文を一括配置
 
         Returns:
             配置結果
         """
+        placed_count = 0
+        errors: list[str] = []
+
         symbol_info = self.client.get_symbol_info(self.strategy.symbol)
         if not symbol_info:
             logger.error(f"シンボル情報取得失敗: {self.strategy.symbol}")
             return OrderPlacementResult(placed=0, errors=["シンボル情報取得失敗"])
-
-        placed_count = 0
-        errors: list[str] = []
 
         for grid in self.strategy.get_active_buy_grids():
             if grid.position_filled:
                 continue
 
             try:
-                quantity = self.strategy.get_order_quantity(
-                    grid.buy_price, symbol_info["min_qty"], symbol_info["step_size"]
-                )
-                if quantity <= 0:
-                    logger.warning(f"グリッド {grid.level}: 無効な数量 {quantity}")
-                    continue
-
-                adjusted_price = self._adjust_price(
-                    grid.buy_price, symbol_info["tick_size"], side="BUY"
-                )
-                order = self.client.place_order(
-                    symbol=self.strategy.symbol,
-                    side="BUY",
-                    quantity=quantity,
-                    price=adjusted_price,
-                )
-
-                self._register_and_handle(order, grid.level, "BUY", adjusted_price, quantity)
-                placed_count += 1
+                result = self._place_order(grid.level, "BUY", grid.buy_price)
+                if result is not None:
+                    placed_count += 1
+                else:
+                    logger.warning(
+                        f"グリッド {grid.level}: 買い注文スキップ"
+                        "（数量無効またはシンボル情報取得失敗）"
+                    )
 
             except Exception as e:
                 error_msg = f"グリッド {grid.level} 買い注文失敗: {e}"
@@ -129,30 +151,17 @@ class OrderManager:
         for grid in self.strategy.get_active_sell_grids():
             try:
                 buy_order_id = grid.buy_order_id
-                # アクティブ注文に買い注文があれば実際の約定数量を使用、なければ再計算
                 if buy_order_id and buy_order_id in self._active_orders:
                     quantity = self._active_orders[buy_order_id].quantity
                 else:
-                    # 再起動後などで注文記録が失われた場合のフォールバック
                     quantity = self.strategy.get_order_quantity(
                         grid.buy_price, symbol_info["min_qty"], symbol_info["step_size"]
                     )
 
-                if quantity <= 0:
-                    continue
-
-                adjusted_price = self._adjust_price(
-                    grid.sell_price, symbol_info["tick_size"], side="SELL"
-                )
-                order = self.client.place_order(
-                    symbol=self.strategy.symbol,
-                    side="SELL",
-                    quantity=quantity,
-                    price=adjusted_price,
-                )
-
-                self._register_and_handle(order, grid.level, "SELL", adjusted_price, quantity)
-                placed_count += 1
+                if grid.sell_price is not None:
+                    result = self._place_order(grid.level, "SELL", grid.sell_price, quantity)
+                if result is not None:
+                    placed_count += 1
 
             except Exception as e:
                 error_msg = f"グリッド {grid.level} 売り注文失敗: {e}"
@@ -163,11 +172,7 @@ class OrderManager:
         return OrderPlacementResult(placed=placed_count, errors=errors)
 
     def check_order_fills(self) -> list[FillEvent]:
-        """約定済み注文をチェックし、新規約定があれば処理してクリーンアップ
-
-        Returns:
-            新規約定リスト
-        """
+        """約定済み注文をチェックし、新規約定があれば処理してクリーンアップ"""
         new_fills: list[FillEvent] = []
         filled_ids: set[int] = set()
 
@@ -221,11 +226,7 @@ class OrderManager:
         return new_fills
 
     def cancel_all_orders(self) -> int:
-        """すべてのアクティブ注文をキャンセル
-
-        Returns:
-            キャンセル件数
-        """
+        """すべてのアクティブ注文をキャンセル"""
         open_orders = self.client.get_open_orders(self.strategy.symbol)
         canceled_count = 0
 
@@ -244,32 +245,10 @@ class OrderManager:
     def place_buy_order_for_grid(self, grid_level: int) -> bool:
         """特定グリッドレベルの買い注文を配置（決済後の再注文）"""
         try:
-            symbol_info = self.client.get_symbol_info(self.strategy.symbol)
-            if not symbol_info:
-                return False
-
             grid = self.strategy.grids[grid_level]
             grid.position_filled = False
-
-            quantity = self.strategy.get_order_quantity(
-                grid.buy_price, symbol_info["min_qty"], symbol_info["step_size"]
-            )
-            if quantity <= 0:
-                logger.warning(f"グリッド {grid_level}: 無効な数量 {quantity}")
-                return False
-
-            adjusted_price = self._adjust_price(
-                grid.buy_price, symbol_info["tick_size"], side="BUY"
-            )
-            order = self.client.place_order(
-                symbol=self.strategy.symbol,
-                side="BUY",
-                quantity=quantity,
-                price=adjusted_price,
-            )
-
-            self._register_and_handle(order, grid_level, "BUY", adjusted_price, quantity)
-            return True
+            result = self._place_order(grid_level, "BUY", grid.buy_price)
+            return result is not None
 
         except Exception as e:
             logger.error(f"グリッド {grid_level} 再注文失敗: {e}")
@@ -278,26 +257,11 @@ class OrderManager:
     def place_sell_order_for_grid(self, grid_level: int, quantity: float) -> bool:
         """特定グリッドレベルの売り注文を配置（買い約定後）"""
         try:
-            symbol_info = self.client.get_symbol_info(self.strategy.symbol)
-            if not symbol_info:
-                return False
-
             grid = self.strategy.grids[grid_level]
             if not grid.sell_price:
                 return False
-
-            adjusted_price = self._adjust_price(
-                grid.sell_price, symbol_info["tick_size"], side="SELL"
-            )
-            order = self.client.place_order(
-                symbol=self.strategy.symbol,
-                side="SELL",
-                quantity=quantity,
-                price=adjusted_price,
-            )
-
-            self._register_and_handle(order, grid_level, "SELL", adjusted_price, quantity)
-            return True
+            result = self._place_order(grid_level, "SELL", grid.sell_price, quantity)
+            return result is not None
 
         except Exception as e:
             logger.error(f"グリッド {grid_level} 売り注文失敗: {e}")
@@ -311,19 +275,10 @@ class OrderManager:
 
     @staticmethod
     def _adjust_price(price: float, tick_size: float, side: str = "BUY") -> float:
-        """価格をtick_sizeの倍数に調整
-
-        Args:
-            price: 調整前価格
-            tick_size: 価格の刻み幅
-            side: 注文側（'BUY' or 'SELL'）
-                    BUY: tick_size以下に丸める（不利にならない）
-                    SELL: tick_size以上に丸める（不利にならない）
-        """
+        """価格をtick_sizeの倍数に調整（BUY: 切り下げ, SELL: 切り上げ）"""
         if side == "BUY":
             return math.floor(price / tick_size) * tick_size
-        else:  # SELL
-            return math.ceil(price / tick_size) * tick_size
+        return math.ceil(price / tick_size) * tick_size
 
     def _register_and_handle(
         self, order: dict, grid_level: int, side: str, price: float, quantity: float

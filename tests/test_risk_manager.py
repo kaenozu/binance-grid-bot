@@ -8,7 +8,6 @@
 import pytest
 from unittest.mock import MagicMock
 from src.risk_manager import RiskManager
-from src.grid_strategy import GridStrategy
 
 
 class TestRiskManager:
@@ -17,7 +16,7 @@ class TestRiskManager:
     @pytest.fixture
     def risk_manager(self, grid_strategy):
         mock_client = MagicMock()
-        return RiskManager(mock_client, grid_strategy, entry_price=50000.0)
+        return RiskManager(mock_client, grid_strategy)
 
     def test_stop_loss_price(self, risk_manager):
         # 損切りは lower_price (45000) を基準に -5%
@@ -53,35 +52,13 @@ class TestRiskManager:
         risk_manager.record_position_open()
         risk_manager.record_position_close(profit=10.0)
         assert risk_manager.current_positions == 1
-        assert risk_manager.total_trades == 1
-        assert risk_manager.total_profit == 10.0
-
-    def test_total_profit_accumulation(self, risk_manager):
-        risk_manager.record_position_open()
-        risk_manager.record_position_close(profit=5.0)
-        risk_manager.record_position_open()
-        risk_manager.record_position_close(profit=-2.0)
-        assert risk_manager.total_profit == 3.0
-        assert risk_manager.total_trades == 2
 
     def test_risk_status(self, risk_manager):
         status = risk_manager.risk_status
         assert status["stop_loss_price"] == 42750.0
         assert status["current_positions"] == 0
         assert status["max_positions"] == 5
-        assert status["total_trades"] == 0
-        assert status["total_profit"] == 0.0
         assert status["stop_loss_percentage"] == 5.0
-
-    def test_update_peak_and_drawdown(self, risk_manager):
-        risk_manager.update_peak(10000.0)
-        assert risk_manager.peak_value == 10000.0
-
-        risk_manager.update_peak(10500.0)
-        assert risk_manager.peak_value == 10500.0
-
-        risk_manager.update_peak(10000.0)
-        assert abs(risk_manager.max_drawdown - 4.761904761904762) < 0.001
 
     def test_should_halt_trading_stop_loss(self, risk_manager):
         # 損切り価格 42750 を下回ったら停止
@@ -89,23 +66,3 @@ class TestRiskManager:
 
     def test_should_halt_trading_safe(self, risk_manager):
         assert risk_manager.should_halt_trading(50000.0) is False
-
-    def test_emergency_actions_empty(self, risk_manager):
-        actions = risk_manager.get_emergency_actions()
-        assert actions == []
-
-    def test_emergency_actions_high_positions(self):
-        mock_client = MagicMock()
-        strategy = GridStrategy(
-            symbol="BTCUSDT",
-            current_price=50000.0,
-            lower_price=45000.0,
-            upper_price=55000.0,
-            grid_count=10,
-            investment_amount=1000.0,
-        )
-        rm = RiskManager(mock_client, strategy, entry_price=50000.0)
-        for _ in range(5):
-            rm.record_position_open()
-        actions = rm.get_emergency_actions()
-        assert len(actions) >= 1

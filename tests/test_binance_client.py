@@ -8,7 +8,7 @@
 from unittest.mock import MagicMock, patch
 import pytest
 
-from src.binance_client import BinanceClient, BinanceAPIError, MAX_RETRIES
+from src.binance_client import BinanceClient, BinanceAPIError
 
 
 @pytest.fixture

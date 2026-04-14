@@ -5,6 +5,8 @@
 関連ファイル: src/order_manager.py, src/grid_strategy.py
 """
 
+from typing import Optional
+
 from utils.logger import setup_logger
 
 logger = setup_logger("order_sync")
@@ -27,11 +29,11 @@ def sync_with_exchange(order_manager, strategy):
         return 0, 0
 
     exchange_ids = {o["orderId"] for o in open_orders}
-    internal_ids = set(order_manager._active_orders.keys())
+    internal_ids = order_manager.get_active_order_ids()
 
     removed = 0
     for oid in list(internal_ids - exchange_ids):
-        del order_manager._active_orders[oid]
+        order_manager.remove_order(oid)
         removed += 1
     if removed:
         logger.info(f"内部にのみ存在する注文を削除: {removed} 件")
@@ -67,9 +69,9 @@ def sync_with_exchange(order_manager, strategy):
     return registered, removed
 
 
-def _match_order_to_grid(price: float, strategy, side: str) -> int:
+def _match_order_to_grid(price: float, strategy, side: str) -> Optional[int]:
     """注文価格に最も近いグリッドレベルを返す"""
-    best_level = None
+    best_level: Optional[int] = None
     best_diff = float("inf")
 
     grid_spacing = strategy.grid_spacing

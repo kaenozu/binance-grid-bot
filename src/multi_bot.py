@@ -1,17 +1,21 @@
 """
 ファイルパス: src/multi_bot.py
 概要: マルチペア対応ボット
-説明: 複数の通貨ペアで同時にグリッド取引を実行
-関連ファイル: src/bot.py, config/settings.py
+説明: 複数の通貨ペアで同時にグリッド取引を実行。
+  共有APIWeightTracker、エラー分離、クリーンシャットダウン。
+関連ファイル: src/bot.py, src/api_weight.py, config/settings.py
 """
 
 import threading
 import time
-from unittest.mock import patch
+from typing import TYPE_CHECKING, Optional
 
-from config.settings import Settings
-from src.binance_client import BinanceClient
+from src.api_weight import APIWeightTracker
+from src.ws_client import BinanceWebSocketClient
 from utils.logger import setup_logger
+
+if TYPE_CHECKING:
+    from src.bot import GridBot
 
 logger = setup_logger("multi_bot")
 
@@ -19,10 +23,17 @@ logger = setup_logger("multi_bot")
 class MultiBot:
     """マルチペアグリッドボット"""
 
-    def __init__(self, symbols: list[str]):
+    def __init__(
+        self,
+        symbols: list[str],
+        weight_tracker: Optional[APIWeightTracker] = None,
+    ):
         self.symbols = symbols
-        self._bots = []
+        self.weight_tracker = weight_tracker or APIWeightTracker()
+        self._bots: dict[str, GridBot] = {}  # type: ignore[name-defined]
         self._threads: list[threading.Thread] = []
+        self._shutdown_event = threading.Event()
+        self._errors: dict[str, list[str]] = {s: [] for s in symbols}
 
     def start_all(self):
         """全ペアのボットを開始"""
@@ -31,20 +42,82 @@ class MultiBot:
         for symbol in self.symbols:
             logger.info(f"ペア {symbol} のボットを起動中...")
             try:
-                with patch("config.settings.Settings.TRADING_SYMBOL", symbol):
-                    bot = GridBot()
-                t = threading.Thread(target=bot.start, daemon=True)
+                ws_client = BinanceWebSocketClient()
+                bot = GridBot(
+                    symbol=symbol,
+                    ws_client=ws_client,
+                    weight_tracker=self.weight_tracker,
+                )
+                t = threading.Thread(target=self._run_bot, args=(bot, symbol), daemon=True)
                 t.start()
                 self._threads.append(t)
-                self._bots.append(bot)
+                self._bots[symbol] = bot
             except Exception as e:
+                self._errors[symbol].append(str(e))
                 logger.error(f"ペア {symbol} の起動に失敗: {e}")
 
+        logger.info(f"全ボット起動完了: {len(self._bots)}/{len(self.symbols)}")
+
         try:
-            while True:
-                time.sleep(1)
+            while not self._shutdown_event.is_set():
+                self._shutdown_event.wait(timeout=1)
         except KeyboardInterrupt:
             logger.info("全ボットを停止中...")
-            for bot in self._bots:
+
+        self.stop_all()
+        logger.info("全ボット停止完了")
+
+    def _run_bot(self, bot, symbol: str):
+        """単一ボットをエラー分離して実行"""
+        while not self._shutdown_event.is_set():
+            try:
+                bot.start()
+            except Exception as e:
+                self._errors[symbol].append(str(e))
+                logger.error(f"ペア {symbol} エラー: {e}")
+                if not self._shutdown_event.is_set():
+                    logger.info(f"ペア {symbol} を5秒後にリスタート...")
+                    time.sleep(5)
+
+    def stop_all(self, timeout: float = 30):
+        """全ボットを停止
+
+        Args:
+            timeout: タイムアウト秒数
+        """
+        self._shutdown_event.set()
+        for bot in self._bots.values():
+            try:
                 bot.stop()
-            logger.info("全ボット停止完了")
+            except Exception as e:
+                logger.error(f"ボット停止エラー: {e}")
+
+        deadline = time.time() + timeout
+        for t in self._threads:
+            remaining = max(0, deadline - time.time())
+            t.join(timeout=remaining)
+
+    def get_status(self) -> dict:
+        """集約ステータスを返す"""
+        statuses = {}
+        for symbol in self.symbols:
+            bot = self._bots.get(symbol)
+            if bot:
+                summary = bot.get_summary()
+                statuses[symbol] = {
+                    "running": summary["running"],
+                    "price": summary["price"],
+                    "grids": summary["grids"],
+                    "filled": summary["filled"],
+                    "total_profit": summary["total_profit"],
+                    "errors": self._errors.get(symbol, []),
+                }
+            else:
+                statuses[symbol] = {
+                    "running": False,
+                    "errors": self._errors.get(symbol, []),
+                }
+        return {
+            "symbols": statuses,
+            "weight": self.weight_tracker.info,
+        }

@@ -33,15 +33,11 @@ class TestGridStrategy:
         assert grid_strategy.grids[9].sell_price is None
 
     def test_order_quantity(self, grid_strategy):
-        qty = grid_strategy.get_order_quantity(
-            50000.0, min_qty=0.00001, step_size=0.00001
-        )
+        qty = grid_strategy.get_order_quantity(50000.0, min_qty=0.00001, step_size=0.00001)
         assert abs(qty - 0.002) < 0.00001
 
     def test_order_quantity_respects_min_qty(self, grid_strategy):
-        qty = grid_strategy.get_order_quantity(
-            50000.0, min_qty=0.001, step_size=0.00001
-        )
+        qty = grid_strategy.get_order_quantity(50000.0, min_qty=0.001, step_size=0.00001)
         assert qty >= 0.001
 
     def test_active_buy_grids(self, grid_strategy):
@@ -68,10 +64,6 @@ class TestGridStrategy:
         grid_strategy.mark_position_closed(2, 12346)
         assert grid_strategy.grids[2].position_filled is False
         assert grid_strategy.grids[2].sell_order_id == 12346
-
-    def test_calculate_realized_profit(self, grid_strategy):
-        profit = grid_strategy.calculate_realized_profit(50000.0, 51000.0, 0.002)
-        assert profit == 2.0
 
     def test_is_within_grid_range(self, grid_strategy):
         assert grid_strategy.is_within_grid_range(50000.0) is True

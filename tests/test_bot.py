@@ -11,30 +11,7 @@ import pytest
 from src.grid_strategy import GridStrategy
 
 
-@pytest.fixture
-def mock_env():
-    with patch("src.bot.Settings") as mock:
-        mock.validate.return_value = []
-        mock.BINANCE_API_KEY = "test_key"
-        mock.BINANCE_API_SECRET = "test_secret"
-        mock.USE_TESTNET = True
-        mock.TRADING_SYMBOL = "BTCUSDT"
-        mock.GRID_COUNT = 10
-        mock.LOWER_PRICE = None
-        mock.UPPER_PRICE = None
-        mock.INVESTMENT_AMOUNT = 1000.0
-        mock.STOP_LOSS_PERCENTAGE = 5.0
-        mock.MAX_POSITIONS = 5
-        mock.CHECK_INTERVAL = 1
-        mock.STATUS_DISPLAY_INTERVAL = 300
-        mock.MAX_CONSECUTIVE_ERRORS = 5
-        mock.GRID_RANGE_FACTOR = 0.15
-        mock.TRADING_FEE_RATE = 0.001
-        mock.CLOSE_ON_STOP = False
-        yield mock
-
-
-def test_bot_initialization_sets_price(mock_env):
+def test_bot_initialization_sets_price(mock_settings):
     mock_client = MagicMock()
     mock_client.get_symbol_price.return_value = 50000.0
     mock_client.get_account_balance.return_value = {
@@ -94,6 +71,8 @@ def test_tick_processes_fills():
     bot.order_manager = mock_om
     bot.risk_manager = mock_rm
     bot.portfolio = mock_port
+    bot.ws_client = None
+    bot.symbol = "BTCUSDT"
     bot.is_running = True
     bot.consecutive_errors = 0
     bot._last_status_time = 0.0
@@ -130,6 +109,8 @@ def test_tick_halts_on_stop_loss():
     bot.order_manager = mock_om
     bot.risk_manager = mock_rm
     bot.portfolio = mock_port
+    bot.ws_client = None
+    bot.symbol = "BTCUSDT"
     bot.is_running = True
     bot.consecutive_errors = 0
     bot._last_status_time = 0.0
@@ -138,3 +119,50 @@ def test_tick_halts_on_stop_loss():
     bot._tick()
     assert bot.is_running is False
     mock_om.cancel_all_orders.assert_called_once()
+
+
+def test_handle_grid_shift_preserves_filled_positions():
+    strategy = GridStrategy(
+        symbol="BTCUSDT",
+        current_price=50000.0,
+        lower_price=45000.0,
+        upper_price=55000.0,
+        grid_count=10,
+        investment_amount=1000.0,
+    )
+
+    for i in [0, 1, 2]:
+        strategy.grids[i].position_filled = True
+
+    mock_client = MagicMock()
+    mock_client.get_symbol_price.return_value = 70000.0
+    mock_client.get_symbol_info.return_value = {
+        "symbol": "BTCUSDT",
+        "base_asset": "BTC",
+        "min_qty": 0.00001,
+        "step_size": 0.00001,
+        "tick_size": 0.01,
+    }
+
+    mock_om = MagicMock()
+    mock_om.cancel_all_orders.return_value = 0
+    mock_om.place_grid_orders.return_value = MagicMock(placed=0)
+
+    from src.bot import GridBot
+
+    bot = GridBot.__new__(GridBot)
+    bot.client = mock_client
+    bot.strategy = strategy
+    bot.order_manager = mock_om
+    bot.ws_client = None
+    bot.symbol = "BTCUSDT"
+    bot.current_price = 70000.0
+
+    bot._handle_grid_shift()
+
+    filled_after = [g for g in bot.strategy.grids if g.position_filled]
+    assert len(filled_after) == 3
+    for i in range(3):
+        assert bot.strategy.grids[i].position_filled is True
+    for i in range(3, len(bot.strategy.grids)):
+        assert bot.strategy.grids[i].position_filled is False

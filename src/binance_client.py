@@ -5,22 +5,24 @@
 関連ファイル: config/settings.py, src/grid_strategy.py, src/order_manager.py
 """
 
-import time
 import hashlib
 import hmac
+import time
 from typing import Optional
 from urllib.parse import urlencode
-from urllib3.util.retry import Retry
 
 import requests
 from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 from config.settings import Settings
+from src.api_weight import APIWeightTracker
 from utils.logger import setup_logger
 
 logger = setup_logger("binance_client")
 
-MAX_RETRIES = 3
 RETRY_DELAY = 1
+MAX_CONNECTION_RETRIES = 10
 SYMBOL_CACHE_TTL = 300  # シンボル情報のキャッシュ有効期限（秒）
 
 
@@ -36,11 +38,12 @@ class BinanceClient:
     TESTNET_BASE_URL = "https://testnet.binance.vision"
     MAINNET_BASE_URL = "https://api.binance.com"
 
-    def __init__(self):
+    def __init__(self, weight_tracker: APIWeightTracker | None = None):
         self.base_url = self.TESTNET_BASE_URL if Settings.USE_TESTNET else self.MAINNET_BASE_URL
         self.api_key = Settings.BINANCE_API_KEY
         self.api_secret = Settings.BINANCE_API_SECRET
         self._symbol_cache: dict[str, tuple[dict, float]] = {}
+        self._weight_tracker = weight_tracker
 
         self.session = requests.Session()
         self.session.headers.update(
@@ -105,45 +108,52 @@ class BinanceClient:
             query_string = urlencode(params)
             params["signature"] = self._generate_signature(query_string)
 
-        # --- 接続エラー（443等）は無制限リトライ ---
-        attempt_conn = 0
+        if self._weight_tracker:
+            self._weight_tracker.wait_if_needed()
+
+        attempt = 0
         while True:
-            attempt_conn += 1
+            attempt += 1
             try:
                 response = self._send_request(method, url, params)
                 if response.status_code == 429:
                     retry_after = int(
-                        response.headers.get("Retry-After", RETRY_DELAY * (2**attempt_conn))
+                        response.headers.get("Retry-After", RETRY_DELAY * (2**attempt))
                     )
                     logger.warning(
-                        f"レートリミット到達、{retry_after}秒後にリトライ ({attempt_conn}回目)"
+                        f"レートリミット到達、{retry_after}秒後にリトライ ({attempt}回目)"
                     )
                     time.sleep(retry_after)
                     continue
                 if response.status_code >= 500:
-                    wait_time = RETRY_DELAY * (2 ** min(attempt_conn, 5))
+                    wait_time = RETRY_DELAY * (2 ** min(attempt, 5))
                     logger.warning(
-                        f"サーバーエラー ({response.status_code})、{wait_time}秒後にリトライ ({attempt_conn}回目)"
+                        f"サーバーエラー ({response.status_code})、"
+                        f"{wait_time}秒後にリトライ ({attempt}回目)"
                     )
                     time.sleep(wait_time)
                     continue
                 response.raise_for_status()
+                if self._weight_tracker:
+                    used = response.headers.get("X-MBX-USED-WEIGHT")
+                    if used:
+                        self._weight_tracker.update_weight(int(used))
                 return response.json()
             except requests.exceptions.ConnectionError as e:
-                # DNS解決失敗（ネットワーク断）は再接続見込みが低い → 300秒wait
-                # 接続エラー（応答なし等）は指数バックオフ
+                if attempt >= MAX_CONNECTION_RETRIES:
+                    raise BinanceAPIError(
+                        f"接続エラー（{MAX_CONNECTION_RETRIES}回リトライ後）: {e}"
+                    ) from e
                 cause = e.args[0] if e.args else ""
                 is_dns_failure = "NameResolutionError" in cause or "getaddrinfo failed" in cause
                 if is_dns_failure:
                     wait_time = 60
                     logger.warning(
-                        f"DNS解決失敗（接続エラー）、{wait_time}秒後にリトライ ({attempt_conn}回目): {e}"
+                        f"DNS解決失敗（接続エラー）、{wait_time}秒後にリトライ ({attempt}回目): {e}"
                     )
                 else:
-                    wait_time = min(RETRY_DELAY * (2 ** min(attempt_conn, 5)), 60)
-                    logger.warning(
-                        f"接続エラー、{wait_time}秒後にリトライ ({attempt_conn}回目): {e}"
-                    )
+                    wait_time = min(RETRY_DELAY * (2 ** min(attempt, 5)), 60)
+                    logger.warning(f"接続エラー、{wait_time}秒後にリトライ ({attempt}回目): {e}")
                 time.sleep(wait_time)
                 continue
             except requests.exceptions.HTTPError as e:
@@ -154,20 +164,13 @@ class BinanceClient:
                     raise BinanceAPIError(
                         f"クライアントエラー: {status_code} - {response_text}"
                     ) from e
-                wait_time = RETRY_DELAY * (2 ** min(attempt_conn, 5))
-                logger.warning(f"HTTP エラー、{wait_time}秒後にリトライ ({attempt_conn}回目)")
+                wait_time = RETRY_DELAY * (2 ** min(attempt, 5))
+                logger.warning(f"HTTP エラー、{wait_time}秒後にリトライ ({attempt}回目)")
                 time.sleep(wait_time)
                 continue
-            except requests.exceptions.Timeout as e:
-                wait_time = min(RETRY_DELAY * (2 ** min(attempt_conn, 5)), 60)
-                logger.warning(f"タイムアウト、{wait_time}秒後にリトライ ({attempt_conn}回目): {e}")
-                time.sleep(wait_time)
-                continue
-            except requests.exceptions.RequestException as e:
-                wait_time = min(RETRY_DELAY * (2 ** min(attempt_conn, 5)), 60)
-                logger.warning(
-                    f"リクエスト失敗、{wait_time}秒後にリトライ ({attempt_conn}回目): {e}"
-                )
+            except (requests.exceptions.Timeout, requests.exceptions.RequestException) as e:
+                wait_time = min(RETRY_DELAY * (2 ** min(attempt, 5)), 60)
+                logger.warning(f"リクエストエラー、{wait_time}秒後にリトライ ({attempt}回目): {e}")
                 time.sleep(wait_time)
                 continue
 
@@ -284,7 +287,8 @@ class BinanceClient:
         params = {}
         if symbol:
             params["symbol"] = symbol
-        return self._make_request("GET", "/api/v3/openOrders", params, signed=True)
+        result = self._make_request("GET", "/api/v3/openOrders", params, signed=True)
+        return result if isinstance(result, list) else [result]
 
     def get_order(self, symbol: str, order_id: int) -> dict:
         """注文の詳細を取得"""
