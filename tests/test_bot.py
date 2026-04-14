@@ -147,6 +147,7 @@ def test_handle_grid_shift_preserves_filled_positions():
     mock_om = MagicMock()
     mock_om.cancel_all_orders.return_value = 0
     mock_om.place_grid_orders.return_value = MagicMock(placed=0)
+    mock_rm = MagicMock()
 
     from src.bot import GridBot
 
@@ -154,6 +155,7 @@ def test_handle_grid_shift_preserves_filled_positions():
     bot.client = mock_client
     bot.strategy = strategy
     bot.order_manager = mock_om
+    bot.risk_manager = mock_rm
     bot.ws_client = None
     bot.symbol = "BTCUSDT"
     bot.current_price = 70000.0

@@ -13,14 +13,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def _safe_float(value: Optional[str], default: float = 0.0) -> Optional[float]:
-    """環境変数を安全にfloatに変換"""
+def _safe_float_optional(value: Optional[str]) -> Optional[float]:
     if not value:
-        return default
+        return None
     try:
         return float(value)
     except ValueError:
-        return default
+        return None
+
+
+def _safe_float(value: Optional[str], default: float = 0.0) -> float:
+    result = _safe_float_optional(value)
+    return result if result is not None else default
 
 
 def _safe_int(value: Optional[str], default: int = 0) -> int:
@@ -43,8 +47,8 @@ class Settings:
     # 取引設定
     TRADING_SYMBOL: str = os.getenv("TRADING_SYMBOL", "BTCUSDT")
     GRID_COUNT: int = _safe_int(os.getenv("GRID_COUNT"), 10)
-    LOWER_PRICE: Optional[float] = _safe_float(os.getenv("LOWER_PRICE"))
-    UPPER_PRICE: Optional[float] = _safe_float(os.getenv("UPPER_PRICE"))
+    LOWER_PRICE: Optional[float] = _safe_float_optional(os.getenv("LOWER_PRICE"))
+    UPPER_PRICE: Optional[float] = _safe_float_optional(os.getenv("UPPER_PRICE"))
     INVESTMENT_AMOUNT: float = _safe_float(os.getenv("INVESTMENT_AMOUNT"), 100.0) or 100.0
 
     # リスク管理
@@ -53,7 +57,7 @@ class Settings:
 
     # ボット動作設定
     CHECK_INTERVAL: int = _safe_int(os.getenv("CHECK_INTERVAL"), 10)
-    STATUS_DISPLAY_INTERVAL: int = int(os.getenv("STATUS_DISPLAY_INTERVAL", "60"))
+    STATUS_DISPLAY_INTERVAL: int = _safe_int(os.getenv("STATUS_DISPLAY_INTERVAL"), 60)
     MAX_CONSECUTIVE_ERRORS: int = _safe_int(os.getenv("MAX_CONSECUTIVE_ERRORS"), 5)
     GRID_RANGE_FACTOR: float = _safe_float(os.getenv("GRID_RANGE_FACTOR"), 0.15) or 0.15
     TRADING_FEE_RATE: float = _safe_float(os.getenv("TRADING_FEE_RATE"), 0.001) or 0.001

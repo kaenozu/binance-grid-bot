@@ -138,24 +138,12 @@ class Portfolio:
             self.trades.append(trade)
             if len(self.trades) > self._max_trades:
                 unmatched_buys = [t for t in self.trades if t.side == "BUY" and not t.matched]
-                matched_trades = [t for t in self.trades if t.matched or t.side == "SELL"]
+                evictable = [t for t in self.trades if t.side == "SELL" or t.matched]
                 keep_count = self._max_trades - len(unmatched_buys)
                 if keep_count > 0:
-                    matched_to_keep = matched_trades[-keep_count:]
+                    matched_to_keep = evictable[-keep_count:]
                 else:
-                    oldest_buys = (
-                        unmatched_buys[: -self._max_trades]
-                        if len(unmatched_buys) > self._max_trades
-                        else []
-                    )
-                    for t in oldest_buys:
-                        logger.warning(f"未マッチBUY削除: grid={t.grid_level}, price={t.price}")
-                    unmatched_buys = (
-                        unmatched_buys[-self._max_trades :]
-                        if len(unmatched_buys) > self._max_trades
-                        else unmatched_buys
-                    )
-                    matched_to_keep = matched_trades
+                    matched_to_keep = []
                 self.trades = unmatched_buys + matched_to_keep
             self.stats.total_trades += 1
             self.stats.last_update = datetime.now()
@@ -232,20 +220,20 @@ class Portfolio:
         return None
 
     def calculate_unrealized_pnl(self, current_price: float):
-        """未実現損益を計算（手数料反映）"""
-        unrealized = 0.0
-        fee_rate = self._fee_rate
+        with self._lock:
+            unrealized = 0.0
+            fee_rate = self._fee_rate
 
-        for trade in self.trades:
-            if trade.side == "BUY" and not trade.matched:
-                gross = (current_price - trade.price) * trade.quantity
-                if fee_rate > 0:
-                    gross -= trade.price * trade.quantity * fee_rate
-                    gross -= current_price * trade.quantity * fee_rate
-                unrealized += gross
+            for trade in self.trades:
+                if trade.side == "BUY" and not trade.matched:
+                    gross = (current_price - trade.price) * trade.quantity
+                    if fee_rate > 0:
+                        gross -= trade.price * trade.quantity * fee_rate
+                        gross -= current_price * trade.quantity * fee_rate
+                    unrealized += gross
 
-        self.stats.unrealized_profit = unrealized
-        self.stats.total_profit = self.stats.realized_profit + unrealized
+            self.stats.unrealized_profit = unrealized
+            self.stats.total_profit = self.stats.realized_profit + unrealized
 
     def get_stats(self) -> PortfolioStats:
         """統計情報（キャッシュ）を返す"""

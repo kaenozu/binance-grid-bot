@@ -91,6 +91,7 @@ def test_match_order_to_grid_buy(strategy):
 
 
 def test_match_order_to_grid_sell(strategy):
+    strategy.grids[1].position_filled = True
     level = _match_order_to_grid(47000.0, strategy, "SELL")
     assert level == 1
 

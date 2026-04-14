@@ -79,12 +79,12 @@ def _match_order_to_grid(price: float, strategy, side: str) -> Optional[int]:
 
     for grid in strategy.grids:
         if side == "BUY":
-            if side == "BUY" and grid.position_filled:
-                continue
-            if side == "SELL" and not grid.position_filled:
+            if grid.position_filled:
                 continue
             diff = abs(grid.buy_price - price)
         elif side == "SELL" and grid.sell_price is not None:
+            if not grid.position_filled:
+                continue
             diff = abs(grid.sell_price - price)
         else:
             continue

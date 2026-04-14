@@ -57,11 +57,11 @@ class BinanceWebSocketClient:
                     ws.on_close = lambda ws_app, code, msg: None
                     self._ws = ws
                     ws.run_forever(url, ping_interval=20, ping_timeout=10)
+                    self._reconnect_delay = 1
                 except Exception as e:
                     logger.error(f"WebSocket エラー: {e}")
                 finally:
                     self._ws = None
-                    self._reconnect_delay = 1
                 if self._running:
                     logger.info("WebSocket 再接続中...")
                     time.sleep(self._reconnect_delay)

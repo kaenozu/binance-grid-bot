@@ -83,6 +83,9 @@ class GridBot:
                     grid.sell_order_id = gs["sell_order_id"]
             logger.info(f"グリッド状態を復元: {len(grid_states)} レベル")
 
+            filled_count = sum(1 for g in self.strategy.grids if g.position_filled)
+            self.risk_manager.current_positions = filled_count
+
         portfolio_stats = persistence.load_portfolio_stats()
         if portfolio_stats:
             persistence.restore_stats_to(self.portfolio.stats, portfolio_stats)
@@ -247,12 +250,21 @@ class GridBot:
 
         self.order_manager.cancel_all_orders()
         self.strategy.shift_grids()
+        self.risk_manager.stop_loss_price = self.strategy.lower_price * (
+            1 - Settings.STOP_LOSS_PERCENTAGE / 100
+        )
 
+        claimed: set[int] = set()
         for buy_price, buy_order_id, qty in filled_positions:
-            best = min(self.strategy.grids, key=lambda g: abs(g.buy_price - buy_price))
+            available = [g for g in self.strategy.grids if g.level not in claimed]
+            if not available:
+                logger.warning("グリッドシフト: 空きグリッド不足、一部ポジションの復元をスキップ")
+                break
+            best = min(available, key=lambda g: abs(g.buy_price - buy_price))
             best.position_filled = True
             best.buy_order_id = buy_order_id
             best.filled_quantity = qty
+            claimed.add(best.level)
 
         self._place_initial_orders()
 

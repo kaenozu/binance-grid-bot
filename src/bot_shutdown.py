@@ -61,7 +61,7 @@ def close_open_positions(client, strategy, portfolio):
         if available <= 0:
             break
         try:
-            qty_per_grid = strategy.get_order_quantity(
+            qty_per_grid = grid.filled_quantity or strategy.get_order_quantity(
                 grid.buy_price,
                 min_qty=min_qty,
                 step_size=step_size,
