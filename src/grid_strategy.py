@@ -145,12 +145,6 @@ class GridStrategy:
 
         return qty
 
-    def find_nearest_grid(self, price: float) -> Optional[GridLevel]:
-        """現在価格に最も近いグリッドレベルを返す"""
-        if not self.grids:
-            return None
-        return min(self.grids, key=lambda g: abs(g.buy_price - price))
-
     def get_active_buy_grids(self) -> list[GridLevel]:
         """買い注文を配置すべきグリッド（現在価格より下で未約定）"""
         return [
@@ -178,12 +172,6 @@ class GridStrategy:
                 grid.sell_order_id = order_id
                 logger.info(f"グリッド {grid_level} 売り約定記録: order_id={order_id}")
                 break
-
-    def calculate_realized_profit(
-        self, buy_price: float, sell_price: float, quantity: float
-    ) -> float:
-        """実現利益を計算"""
-        return (sell_price - buy_price) * quantity
 
     @property
     def grid_status(self) -> dict:
