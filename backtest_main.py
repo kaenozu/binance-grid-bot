@@ -75,7 +75,7 @@ def main():
     grid_count = args.grid_count
     stop_loss_percent = args.stop_loss
 
-    print(f"設定:")
+    print("設定:")
     print(f"  取引ペア: {symbol}")
     print(f"  グリッド数: {grid_count}")
     print(f"  投資額: {investment} USDT")

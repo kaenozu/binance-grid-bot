@@ -6,7 +6,6 @@
 """
 
 from unittest.mock import MagicMock, patch
-import pytest
 
 from src.grid_strategy import GridStrategy
 
@@ -25,8 +24,8 @@ def test_bot_initialization_sets_price(mock_settings):
             mock_strategy.grids = []
             mock_strategy_cls.return_value = mock_strategy
 
-            with patch("src.bot.OrderManager") as mock_om:
-                with patch("src.bot.RiskManager") as mock_rm:
+            with patch("src.bot.OrderManager"):
+                with patch("src.bot.RiskManager"):
                     with patch("src.bot.Portfolio") as mock_port:
                         mock_port.return_value = MagicMock()
                         mock_port.stats = MagicMock()

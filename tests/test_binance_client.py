@@ -6,9 +6,10 @@
 """
 
 from unittest.mock import MagicMock, patch
+
 import pytest
 
-from src.binance_client import BinanceClient, BinanceAPIError
+from src.binance_client import BinanceAPIError, BinanceClient
 
 
 @pytest.fixture

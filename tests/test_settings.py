@@ -5,7 +5,6 @@
 関連ファイル: config/settings.py, tests/conftest.py
 """
 
-import pytest
 from config.settings import Settings, _safe_float
 
 

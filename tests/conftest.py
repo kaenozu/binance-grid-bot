@@ -5,8 +5,9 @@
 関連ファイル: tests/test_grid_strategy.py, tests/test_risk_manager.py
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from config.settings import Settings
 from src.grid_strategy import GridStrategy

@@ -67,13 +67,31 @@ class PaperClient:
         self._order_counter += 1
         order_id = self._order_counter
 
+        base = symbol.replace("USDT", "") if "USDT" in symbol else "BTC"
+        quote = "USDT"
+
         if price is None:
+            # Market order: fill immediately
             market_price = self.get_symbol_price(symbol)
             fill_price = market_price
             status = "FILLED"
         else:
+            # Limit order: check balance at placement time
             fill_price = price
             status = "NEW"
+            if side == "BUY":
+                cost = fill_price * quantity
+                avail = self._balances.get(quote, {}).get("free", 0)
+                if quote in self._balances and self._balances[quote]["free"] < cost:
+                    raise BinanceAPIError(
+                        f"残高不足: {quote} needed={cost:.2f}, available={avail:.2f}"
+                    )
+            elif side == "SELL":
+                avail = self._balances.get(base, {}).get("free", 0)
+                if base in self._balances and self._balances[base]["free"] < quantity:
+                    raise BinanceAPIError(
+                        f"残高不足: {base} needed={quantity:.8f}, available={avail:.8f}"
+                    )
 
         order = {
             "orderId": order_id,
@@ -88,8 +106,6 @@ class PaperClient:
         }
 
         if status == "FILLED":
-            base = symbol.replace("USDT", "") if "USDT" in symbol else "BTC"
-            quote = "USDT"
             if side == "BUY":
                 cost = fill_price * quantity
                 if quote in self._balances and self._balances[quote]["free"] >= cost:

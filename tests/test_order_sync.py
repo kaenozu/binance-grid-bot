@@ -8,8 +8,9 @@
 from unittest.mock import MagicMock
 
 import pytest
-from src.order_sync import sync_with_exchange, _match_order_to_grid
+
 from src.grid_strategy import GridStrategy
+from src.order_sync import _match_order_to_grid, sync_with_exchange
 
 
 @pytest.fixture
