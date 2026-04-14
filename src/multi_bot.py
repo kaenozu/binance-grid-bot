@@ -7,6 +7,7 @@
 
 import threading
 import time
+from unittest.mock import patch
 
 from config.settings import Settings
 from src.binance_client import BinanceClient
@@ -30,7 +31,8 @@ class MultiBot:
         for symbol in self.symbols:
             logger.info(f"ペア {symbol} のボットを起動中...")
             try:
-                bot = GridBot()
+                with patch("config.settings.Settings.TRADING_SYMBOL", symbol):
+                    bot = GridBot()
                 t = threading.Thread(target=bot.start, daemon=True)
                 t.start()
                 self._threads.append(t)

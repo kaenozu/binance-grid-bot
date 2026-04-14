@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from src.binance_client import BinanceClient
+from src import persistence as persistence_module
 from utils.logger import setup_logger
 
 logger = setup_logger("portfolio")
@@ -91,6 +92,25 @@ class Portfolio:
         except Exception as e:
             logger.error(f"残高取得失敗: {e}")
 
+    def restore_trades(self, trade_records: list[dict]):
+        """DBから復元したトレード履歴を読み込み"""
+        self.trades = []
+        for r in trade_records:
+            self.trades.append(
+                Trade(
+                    timestamp=r["timestamp"],
+                    symbol=r["symbol"],
+                    side=r["side"],
+                    price=r["price"],
+                    quantity=r["quantity"],
+                    order_id=r["order_id"],
+                    grid_level=r["grid_level"],
+                    profit=r["profit"],
+                    matched=r["matched"],
+                )
+            )
+        logger.info(f"トレード履歴を復元: {len(self.trades)} 件")
+
     def record_trade(
         self, side: str, price: float, quantity: float, order_id: int, grid_level: int
     ) -> Optional[float]:
@@ -111,7 +131,10 @@ class Portfolio:
 
         self.trades.append(trade)
         if len(self.trades) > self._max_trades:
-            self.trades = self.trades[-self._max_trades // 2 :]
+            unmatched_buys = [t for t in self.trades if t.side == "BUY" and not t.matched]
+            matched_trades = [t for t in self.trades if t.matched or t.side == "SELL"]
+            matched_to_keep = matched_trades[-(self._max_trades - len(unmatched_buys)) :]
+            self.trades = unmatched_buys + matched_to_keep
         self.stats.total_trades += 1
         self.stats.last_update = datetime.now()
 
@@ -121,7 +144,7 @@ class Portfolio:
             buy_trade = self.find_matching_buy_trade(grid_level)
             if buy_trade:
                 profit = (price - buy_trade.price) * quantity
-                fee_rate = getattr(self, "_fee_rate", 0.0)
+                fee_rate = self._fee_rate
                 if fee_rate > 0 and buy_trade:
                     buy_fee = buy_trade.price * quantity * fee_rate
                     sell_fee = price * quantity * fee_rate
@@ -149,6 +172,21 @@ class Portfolio:
 
                 logger.info(f"取引記録: グリッド {grid_level}, 利益={profit:.2f}")
 
+        try:
+            persistence_module.save_trade(
+                timestamp=trade.timestamp,
+                symbol=trade.symbol,
+                side=trade.side,
+                price=trade.price,
+                quantity=trade.quantity,
+                order_id=trade.order_id,
+                grid_level=trade.grid_level,
+                profit=trade.profit,
+                matched=trade.matched,
+            )
+        except Exception as e:
+            logger.error(f"トレード保存失敗: {e}")
+
         logger.info(f"取引記録追加: {side} {quantity} @ {price}")
         return profit
 
@@ -167,18 +205,26 @@ class Portfolio:
         return None
 
     def calculate_unrealized_pnl(self, current_price: float):
-        """未実現損益を計算"""
+        """未実現損益を計算（手数料反映）"""
         unrealized = 0.0
+        fee_rate = self._fee_rate
 
         for trade in self.trades:
             if trade.side == "BUY" and not trade.matched:
-                unrealized += (current_price - trade.price) * trade.quantity
+                gross = (current_price - trade.price) * trade.quantity
+                if fee_rate > 0:
+                    gross -= trade.price * trade.quantity * fee_rate
+                unrealized += gross
 
         self.stats.unrealized_profit = unrealized
         self.stats.total_profit = self.stats.realized_profit + unrealized
 
     def get_stats(self) -> PortfolioStats:
-        """統計情報を返す"""
+        """統計情報（キャッシュ）を返す"""
+        return self.stats
+
+    def refresh_stats(self) -> PortfolioStats:
+        """統計情報を最新に更新"""
         self._update_balance()
         return self.stats
 

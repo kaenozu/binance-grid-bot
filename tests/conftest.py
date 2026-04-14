@@ -33,6 +33,7 @@ def restore_settings_after_test():
         "GRID_RANGE_FACTOR": Settings.GRID_RANGE_FACTOR,
         "TRADING_FEE_RATE": Settings.TRADING_FEE_RATE,
         "CLOSE_ON_STOP": Settings.CLOSE_ON_STOP,
+        "PERSIST_INTERVAL": Settings.PERSIST_INTERVAL,
     }
     yield
     # テスト後に値を復元

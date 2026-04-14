@@ -60,9 +60,7 @@ class GridStrategy:
             range_factor = Settings.GRID_RANGE_FACTOR
             self.lower_price = current_price * (1 - range_factor)
             self.upper_price = current_price * (1 + range_factor)
-            logger.info(
-                f"価格帯を自動設定: {self.lower_price:.2f} - {self.upper_price:.2f}"
-            )
+            logger.info(f"価格帯を自動設定: {self.lower_price:.2f} - {self.upper_price:.2f}")
 
         self.grids: list[GridLevel] = []
         self._calculate_grids()
@@ -156,9 +154,7 @@ class GridStrategy:
     def get_active_buy_grids(self) -> list[GridLevel]:
         """買い注文を配置すべきグリッド（現在価格より下で未約定）"""
         return [
-            g
-            for g in self.grids
-            if g.buy_price <= self.current_price and not g.position_filled
+            g for g in self.grids if g.buy_price <= self.current_price and not g.position_filled
         ]
 
     def get_active_sell_grids(self) -> list[GridLevel]:
@@ -211,9 +207,7 @@ class GridStrategy:
         """価格がグリッド範囲内か"""
         return self.lower_price <= price <= self.upper_price
 
-    def shift_grids(
-        self, new_lower: Optional[float] = None, new_upper: Optional[float] = None
-    ):
+    def shift_grids(self, new_lower: Optional[float] = None, new_upper: Optional[float] = None):
         """グリッド範囲をシフト（価格トレンド対応）
 
         Args:
@@ -229,16 +223,6 @@ class GridStrategy:
             self.lower_price = self.current_price * (1 - range_factor)
             self.upper_price = self.current_price * (1 + range_factor)
 
-        logger.info(
-            f"グリッド範囲シフト: {self.lower_price:.2f} - {self.upper_price:.2f}"
-        )
+        logger.info(f"グリッド範囲シフト: {self.lower_price:.2f} - {self.upper_price:.2f}")
 
-        old_grids = {g.level: g for g in self.grids}
         self._calculate_grids()
-
-        for grid in self.grids:
-            if grid.level in old_grids:
-                old = old_grids[grid.level]
-                grid.position_filled = old.position_filled
-                grid.buy_order_id = old.buy_order_id
-                grid.sell_order_id = old.sell_order_id

@@ -5,6 +5,8 @@
 関連ファイル: src/bot.py, config/settings.py
 """
 
+import argparse
+import os
 import sys
 
 from config.settings import Settings
@@ -12,15 +14,48 @@ from utils.logger import setup_logger
 
 logger = setup_logger("main")
 
+DB_PATH = os.path.join("data", "bot_state.db")
+
+
+def _reset_db():
+    """DBとエクスポートを削除"""
+    removed = []
+    if os.path.exists(DB_PATH):
+        os.remove(DB_PATH)
+        removed.append(DB_PATH)
+    export_dir = os.path.join("data", "exports")
+    if os.path.isdir(export_dir):
+        for f in os.listdir(export_dir):
+            fp = os.path.join(export_dir, f)
+            os.remove(fp)
+            removed.append(fp)
+    if removed:
+        print(f"削除完了:")
+        for r in removed:
+            print(f"  - {r}")
+    else:
+        print("削除対象なし（DBは既にクリーン）")
+
 
 def main():
     """メイン関数"""
+    parser = argparse.ArgumentParser(description="Binance グリッド取引ボット")
+    parser.add_argument("--reset", action="store_true", help="DBとトレード履歴を初期化して起動")
+    parser.add_argument("--reset-only", action="store_true", help="DB初期化のみ（起動しない）")
+    args = parser.parse_args()
+
+    if args.reset or args.reset_only:
+        print("DB初期化...")
+        _reset_db()
+        if args.reset_only:
+            sys.exit(0)
+        print()
+
     print("=" * 60)
     print("Binance グリッド取引ボット")
     print("=" * 60)
     print()
-    
-    # 設定確認
+
     print("設定確認:")
     print(f"  取引ペア: {Settings.TRADING_SYMBOL}")
     print(f"  グリッド数: {Settings.GRID_COUNT}")
@@ -28,11 +63,9 @@ def main():
     print(f"  損切り: {Settings.STOP_LOSS_PERCENTAGE}%")
     print(f"  Testnet: {'Yes' if Settings.USE_TESTNET else 'No (Production)'}")
     print()
-    
-    # Testnet警告
+
     if not Settings.USE_TESTNET:
         print("警告: 本番モードで実行します")
-        # 非対話環境（パイプ、リダイレクト等）では自動中止
         if not sys.stdin.isatty():
             print("非対話環境のため本番モードを中止します")
             sys.exit(1)
@@ -40,12 +73,13 @@ def main():
         if confirm != "yes":
             print("中止しました")
             sys.exit(0)
-    
+
     print("ボットを起動中...")
     print()
-    
+
     try:
         from src.bot import GridBot
+
         bot = GridBot()
         bot.start()
     except ValueError as e:

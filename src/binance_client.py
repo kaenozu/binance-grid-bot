@@ -35,9 +35,7 @@ class BinanceClient:
     MAINNET_BASE_URL = "https://api.binance.com"
 
     def __init__(self):
-        self.base_url = (
-            self.TESTNET_BASE_URL if Settings.USE_TESTNET else self.MAINNET_BASE_URL
-        )
+        self.base_url = self.TESTNET_BASE_URL if Settings.USE_TESTNET else self.MAINNET_BASE_URL
         self.api_key = Settings.BINANCE_API_KEY
         self.api_secret = Settings.BINANCE_API_SECRET
         self._symbol_cache: dict[str, tuple[dict, float]] = {}
@@ -123,9 +121,7 @@ class BinanceClient:
                         f"サーバーエラー ({response.status_code})、{wait_time}秒後にリトライ ({attempt + 1}/{MAX_RETRIES})"
                     )
                     time.sleep(wait_time)
-                    last_error = BinanceAPIError(
-                        f"サーバーエラー: {response.status_code}"
-                    )
+                    last_error = BinanceAPIError(f"サーバーエラー: {response.status_code}")
                     continue
 
                 response.raise_for_status()
@@ -191,6 +187,11 @@ class BinanceClient:
         else:
             raise ValueError(f"サポートされていない HTTP メソッド: {method}")
 
+    @staticmethod
+    def _format_value(value: float, precision: int) -> str:
+        """指定精度でフォーマット（不要なゼロを除去）"""
+        return f"{value:.{precision}f}".rstrip("0").rstrip(".")
+
     def get_account_balance(self) -> dict:
         """アカウント残高を取得
 
@@ -241,9 +242,7 @@ class BinanceClient:
             "min_qty": float(filters.get("LOT_SIZE", {}).get("minQty", 0)),
             "max_qty": float(filters.get("LOT_SIZE", {}).get("maxQty", 0)),
             "step_size": float(filters.get("LOT_SIZE", {}).get("stepSize", 0)),
-            "min_notional": float(
-                filters.get("MIN_NOTIONAL", {}).get("minNotional", 0)
-            ),
+            "min_notional": float(filters.get("MIN_NOTIONAL", {}).get("minNotional", 0)),
             "tick_size": float(filters.get("PRICE_FILTER", {}).get("tickSize", 0)),
         }
         self._symbol_cache[symbol] = (info, now)
@@ -267,12 +266,12 @@ class BinanceClient:
             "symbol": symbol,
             "side": side,
             "type": "LIMIT" if price else "MARKET",
-            "quantity": f"{quantity:.8f}".rstrip("0").rstrip("."),
+            "quantity": self._format_value(quantity, 8),
             "timeInForce": "GTC" if price else None,
         }
 
         if price:
-            params["price"] = f"{price:.8f}".rstrip("0").rstrip(".")
+            params["price"] = self._format_value(price, 8)
 
         params = {k: v for k, v in params.items() if v is not None}
 

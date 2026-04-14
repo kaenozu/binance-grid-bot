@@ -5,6 +5,7 @@
 関連ファイル: src/binance_client.py, src/bot.py
 """
 
+import requests as requests_lib
 from typing import Optional
 from unittest.mock import MagicMock
 
@@ -37,10 +38,8 @@ class PaperClient:
         return dict(self._balances)
 
     def get_symbol_price(self, symbol: str) -> float:
-        import requests
-
-        response = requests.get(
-            "https://api.binance.com/api/v3/ticker/price",
+        response = requests_lib.get(
+            "https://testnet.binance.vision/api/v3/ticker/price",
             params={"symbol": symbol},
             timeout=10,
         )

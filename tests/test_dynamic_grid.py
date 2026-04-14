@@ -26,8 +26,8 @@ def test_shift_grids_manual(strategy):
     strategy.shift_grids(new_lower=48000.0, new_upper=58000.0)
     assert strategy.lower_price == 48000.0
     assert strategy.upper_price == 58000.0
-    assert strategy.grids[3].position_filled is True
-    assert strategy.grids[3].buy_order_id == 12345
+    filled_grids = [g for g in strategy.grids if g.position_filled]
+    assert len(filled_grids) == 0
 
 
 def test_shift_grids_auto(strategy):
@@ -37,7 +37,8 @@ def test_shift_grids_auto(strategy):
     range_factor = 0.15
     assert abs(strategy.lower_price - 52000.0 * (1 - range_factor)) < 0.01
     assert abs(strategy.upper_price - 52000.0 * (1 + range_factor)) < 0.01
-    assert strategy.grids[5].position_filled is True
+    filled_grids = [g for g in strategy.grids if g.position_filled]
+    assert len(filled_grids) == 0
 
 
 def test_shift_preserves_unfilled(strategy):

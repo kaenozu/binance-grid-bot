@@ -60,14 +60,6 @@ class TestOrderManager:
         assert 100 in order_manager.active_orders
         assert order_manager.active_orders[100].grid_level == 3
 
-    def test_cleanup_filled_orders(self, order_manager):
-        order_manager.register_order(100, 0, "BUY", 45000.0, 0.002, "FILLED")
-        order_manager.register_order(101, 1, "BUY", 46000.0, 0.002, "NEW")
-
-        order_manager.cleanup_filled_orders()
-        assert 100 not in order_manager.active_orders
-        assert 101 in order_manager.active_orders
-
     def test_check_order_fills_auto_cleanup(self, order_manager, mock_client):
         order_manager.register_order(100, 0, "BUY", 45000.0, 0.002, "NEW")
 

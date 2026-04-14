@@ -16,14 +16,14 @@ from utils.logger import setup_logger
 logger = setup_logger("persistence")
 
 DB_PATH = Path("data") / "bot_state.db"
+_db_initialized = False
 
 
-def get_db_path() -> Path:
-    return DB_PATH
-
-
-def _init_db():
-    """DBとテーブルを作成"""
+def _ensure_db():
+    """DBとテーブルを作成（初回のみ）"""
+    global _db_initialized
+    if _db_initialized:
+        return
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
@@ -74,7 +74,14 @@ def _init_db():
     """)
     conn.commit()
     conn.close()
+    _db_initialized = True
     logger.info(f"DB初期化完了: {DB_PATH}")
+
+
+def _get_connection():
+    """DB接続を取得"""
+    _ensure_db()
+    return sqlite3.connect(str(DB_PATH))
 
 
 def save_trade(
@@ -89,8 +96,7 @@ def save_trade(
     matched: bool = False,
 ):
     """トレードをDBに保存"""
-    _init_db()
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = _get_connection()
     conn.execute(
         """INSERT INTO trades (timestamp, symbol, side, price, quantity, order_id, grid_level, profit, matched)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -117,8 +123,7 @@ def save_grid_states(symbol: str, grids: list):
         symbol: 取引ペア
         grids: GridLevel のリスト
     """
-    _init_db()
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = _get_connection()
     conn.execute("DELETE FROM grid_states WHERE symbol = ?", (symbol,))
     for g in grids:
         conn.execute(
@@ -140,8 +145,7 @@ def save_grid_states(symbol: str, grids: list):
 
 def save_portfolio_stats(stats):
     """ポートフォリオ統計をDBに保存"""
-    _init_db()
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = _get_connection()
     conn.execute("DELETE FROM portfolio_stats WHERE id = 1")
     conn.execute(
         """INSERT INTO portfolio_stats (id, initial_balance, current_balance, total_profit, realized_profit,
@@ -173,7 +177,7 @@ def load_grid_states(symbol: str) -> Optional[list[dict]]:
     """グリッド状態をDBから復元"""
     if not DB_PATH.exists():
         return None
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = _get_connection()
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT grid_level, buy_price, sell_price, buy_order_id, sell_order_id, position_filled FROM grid_states WHERE symbol = ? ORDER BY grid_level",
@@ -199,7 +203,7 @@ def load_portfolio_stats() -> Optional[dict]:
     """ポートフォリオ統計をDBから復元"""
     if not DB_PATH.exists():
         return None
-    conn = sqlite3.connect(str(DB_PATH))
+    conn = _get_connection()
     conn.row_factory = sqlite3.Row
     rows = conn.execute("SELECT * FROM portfolio_stats WHERE id = 1").fetchall()
     conn.close()
@@ -222,3 +226,55 @@ def load_portfolio_stats() -> Optional[dict]:
         "start_time": datetime.fromisoformat(row["start_time"]) if row["start_time"] else None,
         "last_update": datetime.fromisoformat(row["last_update"]) if row["last_update"] else None,
     }
+
+
+def load_trades() -> list[dict]:
+    """トレード履歴をDBから復元"""
+    if not DB_PATH.exists():
+        return []
+    conn = _get_connection()
+    conn.row_factory = sqlite3.Row
+    rows = conn.execute(
+        "SELECT timestamp, symbol, side, price, quantity, order_id, grid_level, profit, matched "
+        "FROM trades ORDER BY id ASC"
+    ).fetchall()
+    conn.close()
+    return [
+        {
+            "timestamp": datetime.fromisoformat(row["timestamp"]),
+            "symbol": row["symbol"],
+            "side": row["side"],
+            "price": row["price"],
+            "quantity": row["quantity"],
+            "order_id": row["order_id"],
+            "grid_level": row["grid_level"],
+            "profit": row["profit"],
+            "matched": bool(row["matched"]),
+        }
+        for row in rows
+    ]
+
+
+STATS_FIELDS = [
+    "initial_balance",
+    "current_balance",
+    "total_profit",
+    "realized_profit",
+    "unrealized_profit",
+    "total_trades",
+    "winning_trades",
+    "losing_trades",
+    "settled_trades",
+    "win_rate",
+    "avg_profit_per_trade",
+    "total_fees",
+    "start_time",
+    "last_update",
+]
+
+
+def restore_stats_to(stats_obj, data: dict):
+    """PortfolioStats オブジェクトにDB値を一括復元"""
+    for field in STATS_FIELDS:
+        if field in data:
+            setattr(stats_obj, field, data[field])
