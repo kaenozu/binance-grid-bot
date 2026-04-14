@@ -29,22 +29,23 @@ class APIWeightTracker:
         self.window_seconds = window_seconds
         self._current_weight = 0
         self._last_reset = time.time()
-        self._lock = threading.Lock()
+        self._condition = threading.Condition()
 
     def update_weight(self, used_weight: int):
         """ウェイト使用量を更新"""
-        with self._lock:
+        with self._condition:
             now = time.time()
             if now - self._last_reset >= self.window_seconds:
                 self._current_weight = 0
                 self._last_reset = now
 
             self._current_weight = used_weight
+            self._condition.notify()
 
     @property
     def available_weight(self) -> int:
         """利用可能ウェイト"""
-        with self._lock:
+        with self._condition:
             available = self.max_weight - self._current_weight - self.weight_buffer
             return max(0, available)
 
@@ -57,7 +58,7 @@ class APIWeightTracker:
         if not self.should_wait():
             return
 
-        with self._lock:
+        with self._condition:
             elapsed = time.time() - self._last_reset
             reset_in = max(0, self.window_seconds - elapsed)
 
@@ -66,9 +67,7 @@ class APIWeightTracker:
                     f"APIウェイト不足 (残り {self._current_weight}/{self.max_weight})。"
                     f"{reset_in}秒後にリセットされます。待機中..."
                 )
-                self._lock.release()
-                time.sleep(reset_in + 1)
-                self._lock.acquire()
+                self._condition.wait(timeout=reset_in + 1)
 
             self._current_weight = 0
             self._last_reset = time.time()
@@ -76,7 +75,7 @@ class APIWeightTracker:
 
     @property
     def info(self) -> dict:
-        with self._lock:
+        with self._condition:
             return {
                 "current_weight": self._current_weight,
                 "max_weight": self.max_weight,
