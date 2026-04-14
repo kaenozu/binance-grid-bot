@@ -11,30 +11,7 @@ import pytest
 from src.grid_strategy import GridStrategy
 
 
-@pytest.fixture
-def mock_env():
-    with patch("src.bot.Settings") as mock:
-        mock.validate.return_value = []
-        mock.BINANCE_API_KEY = "test_key"
-        mock.BINANCE_API_SECRET = "test_secret"
-        mock.USE_TESTNET = True
-        mock.TRADING_SYMBOL = "BTCUSDT"
-        mock.GRID_COUNT = 10
-        mock.LOWER_PRICE = None
-        mock.UPPER_PRICE = None
-        mock.INVESTMENT_AMOUNT = 1000.0
-        mock.STOP_LOSS_PERCENTAGE = 5.0
-        mock.MAX_POSITIONS = 5
-        mock.CHECK_INTERVAL = 1
-        mock.STATUS_DISPLAY_INTERVAL = 300
-        mock.MAX_CONSECUTIVE_ERRORS = 5
-        mock.GRID_RANGE_FACTOR = 0.15
-        mock.TRADING_FEE_RATE = 0.001
-        mock.CLOSE_ON_STOP = False
-        yield mock
-
-
-def test_bot_initialization_sets_price(mock_env):
+def test_bot_initialization_sets_price(mock_settings):
     mock_client = MagicMock()
     mock_client.get_symbol_price.return_value = 50000.0
     mock_client.get_account_balance.return_value = {

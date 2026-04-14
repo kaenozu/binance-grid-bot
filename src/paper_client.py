@@ -83,11 +83,7 @@ class PaperClient:
 
         self._orders.append(order)
 
-        if side == "BUY" and price is not None:
-            quote = symbol.replace("USDT", "") if "USDT" in symbol else "BTC"
-            if quote in self._balances:
-                self._balances[quote]["free"] += quantity
-        elif side == "BUY" and price is None:
+        if side == "BUY":
             quote = symbol.replace("USDT", "") if "USDT" in symbol else "BTC"
             if quote in self._balances:
                 self._balances[quote]["free"] += quantity

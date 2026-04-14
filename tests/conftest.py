@@ -68,6 +68,13 @@ def mock_settings():
         mock.INVESTMENT_AMOUNT = 1000.0
         mock.STOP_LOSS_PERCENTAGE = 5.0
         mock.MAX_POSITIONS = 5
+        mock.CHECK_INTERVAL = 10
+        mock.MAX_CONSECUTIVE_ERRORS = 5
+        mock.GRID_RANGE_FACTOR = 0.15
+        mock.TRADING_FEE_RATE = 0.001
+        mock.CLOSE_ON_STOP = False
+        mock.PERSIST_INTERVAL = 60
+        mock.validate.return_value = []
         yield mock
 
 
