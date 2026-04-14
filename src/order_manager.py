@@ -61,6 +61,12 @@ class OrderManager:
         """アクティブ注文の読み取り専用ビュー"""
         return dict(self._active_orders)
 
+    def get_active_order_ids(self) -> set[int]:
+        return set(self._active_orders.keys())
+
+    def remove_order(self, order_id: int) -> None:
+        self._active_orders.pop(order_id, None)
+
     def register_order(
         self,
         order_id: int,

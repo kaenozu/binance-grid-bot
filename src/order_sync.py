@@ -27,11 +27,11 @@ def sync_with_exchange(order_manager, strategy):
         return 0, 0
 
     exchange_ids = {o["orderId"] for o in open_orders}
-    internal_ids = set(order_manager._active_orders.keys())
+    internal_ids = order_manager.get_active_order_ids()
 
     removed = 0
     for oid in list(internal_ids - exchange_ids):
-        del order_manager._active_orders[oid]
+        order_manager.remove_order(oid)
         removed += 1
     if removed:
         logger.info(f"内部にのみ存在する注文を削除: {removed} 件")

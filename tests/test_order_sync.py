@@ -28,7 +28,17 @@ def strategy():
 def order_manager(strategy):
     client = MagicMock()
     client.get_open_orders.return_value = []
-    return MagicMock(client=client, strategy=strategy, _active_orders={})
+    om = MagicMock(client=client, strategy=strategy, _active_orders={})
+
+    def _get_ids():
+        return set(om._active_orders.keys())
+
+    def _remove(oid):
+        om._active_orders.pop(oid, None)
+
+    om.get_active_order_ids.side_effect = _get_ids
+    om.remove_order.side_effect = _remove
+    return om
 
 
 def test_sync_with_exchange_empty(order_manager, strategy):
