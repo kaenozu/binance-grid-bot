@@ -265,138 +265,46 @@ class GridBot:
         }
 
     def _display_status(self):
-        """ステータスをCUIに表示"""
-        stats = self.portfolio.refresh_stats()
-        grid_status = self.strategy.grid_status
-        risk_status = self.risk_manager.risk_status
+        from src.bot_display import display_status
 
-        print("\n" + "=" * 70)
-        print(f"グリッドボット ステータス - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print("=" * 70)
-        print(f"取引ペア: {self.symbol}")
-        print(f"現在価格: {self.current_price:.2f}")
-        print(f"価格範囲: {grid_status['price_range']}")
-        print(f"グリッド数: {grid_status['total_grids']} (間隔: {grid_status['grid_spacing']:.2f})")
-        print(f"ポジション: {grid_status['filled_positions']}/{grid_status['total_grids']}")
-        print("-" * 70)
-        print(f"初期残高: {stats.initial_balance:.2f} USDT")
-        print(f"現在残高: {stats.current_balance:.2f} USDT")
-        print(f"実現利益: {stats.realized_profit:+.2f} USDT")
-        print(f"未実現利益: {stats.unrealized_profit:+.2f} USDT")
-        print(f"累計手数料: {stats.total_fees:.2f} USDT")
-        print(f"総利益: {stats.total_profit:+.2f} USDT")
-        print("-" * 70)
-        print(f"取引回数: {stats.total_trades}")
-        print(f"勝率: {stats.win_rate:.1f}%")
-        print(f"損切りライン: {risk_status['stop_loss_price']:.2f}")
-        print(f"ポジション: {risk_status['current_positions']}/{risk_status['max_positions']}")
-        print("=" * 70)
-        print("Ctrl+C で停止")
+        stats = self.portfolio.refresh_stats()
+        display_status(
+            self.symbol,
+            self.current_price,
+            self.strategy.grid_status,
+            stats,
+            self.risk_manager.risk_status,
+        )
 
     def _export_on_stop(self):
-        """停止時にトレード履歴をエクスポート"""
-        if not self.portfolio.trades:
-            return
-        try:
-            export_dir = Path("data") / "exports"
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            csv_path = export_dir / f"trades_{timestamp}.csv"
-            json_path = export_dir / f"trades_{timestamp}.json"
-            count = exporter.export_trades_csv(self.portfolio.trades, csv_path)
-            exporter.export_trades_json(self.portfolio.trades, json_path)
-            logger.info(f"トレード履歴をエクスポート: {count} 件 -> {export_dir}")
-        except Exception as e:
-            logger.error(f"エクスポート失敗: {e}")
+        from src.bot_shutdown import export_on_stop
+
+        export_on_stop(self.portfolio)
 
     def _emergency_stop(self):
-        """緊急停止処理（オープンポジションを成行決済して終了）"""
-        logger.warning("緊急停止処理開始...")
-        self._persist_state()
+        from src.bot_shutdown import emergency_stop
+
         self.is_running = False
-        self.order_manager.cancel_all_orders()
-        self._close_open_positions()
-        print(self.portfolio.generate_report())
-        logger.info("緊急停止完了")
+        emergency_stop(
+            self.client, self.strategy, self.order_manager, self.portfolio, self._persist_state
+        )
 
     def _close_open_positions(self):
-        """オープンポジションを成行売却"""
-        open_positions = [g for g in self.strategy.grids if g.position_filled]
-        if not open_positions:
-            return
+        from src.bot_shutdown import close_open_positions
 
-        logger.warning(f"オープンポジション {len(open_positions)} 件を成行決済します")
-        symbol_info = self.client.get_symbol_info(self.strategy.symbol)
-        base_asset = (
-            symbol_info["base_asset"] if symbol_info else self.strategy.symbol.replace("USDT", "")
-        )
-        step_size = symbol_info["step_size"] if symbol_info else 0
-        min_qty = symbol_info["min_qty"] if symbol_info else 0
-        try:
-            balances = self.client.get_account_balance()
-        except Exception as e:
-            logger.error(f"残高取得失敗: {e}")
-            return
-
-        if base_asset not in balances:
-            logger.error(f"残高がありません: {base_asset}")
-            return
-
-        available = balances[base_asset]["free"]
-        if available <= 0:
-            logger.warning(f"{base_asset} の残高がありません")
-            return
-
-        for grid in open_positions:
-            if available <= 0:
-                break
-            try:
-                qty_per_grid = self.strategy.get_order_quantity(
-                    grid.buy_price, min_qty=min_qty, step_size=step_size
-                )
-                sell_qty = min(available, qty_per_grid)
-                if sell_qty <= 0:
-                    continue
-
-                result = self.client.place_order(
-                    symbol=self.strategy.symbol,
-                    side="SELL",
-                    quantity=sell_qty,
-                    price=None,
-                )
-                filled_qty = float(result.get("executedQty", result.get("origQty", sell_qty)))
-                filled_price = float(result.get("avgPrice") or result.get("price", 0))
-                self.portfolio.record_trade(
-                    side="SELL",
-                    price=filled_price,
-                    quantity=filled_qty,
-                    order_id=result["orderId"],
-                    grid_level=grid.level,
-                )
-                available -= filled_qty
-                grid.position_filled = False
-                logger.info(f"グリッド {grid.level}: 緊急成行決済 {filled_qty} @ {filled_price}")
-            except Exception as e:
-                logger.error(f"グリッド {grid.level}: 緊急決済失敗: {e}")
+        close_open_positions(self.client, self.strategy, self.portfolio)
 
     def stop(self):
-        """ボット停止"""
-        logger.info("ボット停止中...")
+        from config.settings import Settings
+        from src.bot_shutdown import stop_bot
+
         self.is_running = False
-
-        if self.ws_client:
-            self.ws_client.stop()
-
-        self._persist_state()
-
-        canceled = self.order_manager.cancel_all_orders()
-        logger.info(f"キャンセル完了: {canceled} 件")
-
-        if Settings.CLOSE_ON_STOP:
-            self._close_open_positions()
-
-        report = self.portfolio.generate_report()
-        logger.info("\n" + report)
-
-        self._export_on_stop()
-
-        logger.info("ボット停止完了")
+        stop_bot(
+            self.client,
+            self.strategy,
+            self.order_manager,
+            self.portfolio,
+            self._persist_state,
+            Settings.CLOSE_ON_STOP,
+            self.ws_client,
+        )
