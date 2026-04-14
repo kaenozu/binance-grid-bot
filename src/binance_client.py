@@ -20,7 +20,6 @@ from utils.logger import setup_logger
 
 logger = setup_logger("binance_client")
 
-MAX_RETRIES = 3
 RETRY_DELAY = 1
 SYMBOL_CACHE_TTL = 300  # シンボル情報のキャッシュ有効期限（秒）
 
