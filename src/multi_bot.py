@@ -1,18 +1,21 @@
 """
 ファイルパス: src/multi_bot.py
 概要: マルチペア対応ボット
-説明: 複数の通貨ペアで同時にグリッド取引を実行。共有APIWeightTracker、エラー分離、クリーンシャットダウン。
+説明: 複数の通貨ペアで同時にグリッド取引を実行。
+  共有APIWeightTracker、エラー分離、クリーンシャットダウン。
 関連ファイル: src/bot.py, src/api_weight.py, config/settings.py
 """
 
 import threading
 import time
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from src.api_weight import APIWeightTracker
-from src.binance_client import BinanceClient
 from src.ws_client import BinanceWebSocketClient
 from utils.logger import setup_logger
+
+if TYPE_CHECKING:
+    from src.bot import GridBot
 
 logger = setup_logger("multi_bot")
 
@@ -27,7 +30,7 @@ class MultiBot:
     ):
         self.symbols = symbols
         self.weight_tracker = weight_tracker or APIWeightTracker()
-        self._bots: dict[str, object] = {}
+        self._bots: dict[str, GridBot] = {}  # type: ignore[name-defined]
         self._threads: list[threading.Thread] = []
         self._shutdown_event = threading.Event()
         self._errors: dict[str, list[str]] = {s: [] for s in symbols}

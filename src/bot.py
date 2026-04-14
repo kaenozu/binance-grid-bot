@@ -2,25 +2,22 @@
 ファイルパス: src/bot.py
 概要: グリッド取引ボット メインループ
 説明: 価格監視、注文管理、リスク管理、ステータス表示、永続化、エクスポートを統合
-関連ファイル: src/binance_client.py, src/grid_strategy.py, src/order_manager.py, src/risk_manager.py, src/portfolio.py, src/persistence.py, src/order_sync.py, src/exporter.py
+関連ファイル: src/binance_client.py, src/grid_strategy.py, src/order_manager.py,
+  src/risk_manager.py, src/portfolio.py, src/persistence.py, src/order_sync.py, src/exporter.py
 """
 
 import time
 import traceback
-from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 from config.settings import Settings
+from src import order_sync, persistence
 from src.api_weight import APIWeightTracker
 from src.binance_client import BinanceClient
 from src.grid_strategy import GridStrategy
 from src.order_manager import OrderManager
-from src.risk_manager import RiskManager
 from src.portfolio import Portfolio
-from src import persistence
-from src import order_sync
-from src import exporter
+from src.risk_manager import RiskManager
 from src.ws_client import BinanceWebSocketClient
 from utils.logger import setup_logger
 
@@ -199,7 +196,8 @@ class GridBot:
         except Exception as e:
             self.consecutive_errors += 1
             logger.error(
-                f"ティック処理エラー ({self.consecutive_errors}/{Settings.MAX_CONSECUTIVE_ERRORS}): {e}"
+                f"ティック処理エラー ({self.consecutive_errors}/"
+                f"{Settings.MAX_CONSECUTIVE_ERRORS}): {e}"
             )
             logger.error(f"スタックトレース:\n{traceback.format_exc()}")
 

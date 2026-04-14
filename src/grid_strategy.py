@@ -135,7 +135,8 @@ class GridStrategy:
             notional_value = qty * price
             if notional_value < min_notional:
                 logger.warning(
-                    f"注文金額 {notional_value:.2f} USDT が最低注文金額 {min_notional:.2f} USDT を下回っています。"
+                    f"注文金額 {notional_value:.2f} USDT が最低注文金額 "
+                    f"{min_notional:.2f} USDT を下回っています。"
                     f"数量を調整します: {qty:.8f} -> {min_notional / price:.8f}"
                 )
                 adjusted_qty = min_notional / price

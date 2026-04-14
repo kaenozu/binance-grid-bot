@@ -139,7 +139,8 @@ class OrderManager:
                     placed_count += 1
                 else:
                     logger.warning(
-                        f"グリッド {grid.level}: 買い注文スキップ（数量無効またはシンボル情報取得失敗）"
+                        f"グリッド {grid.level}: 買い注文スキップ"
+                        "（数量無効またはシンボル情報取得失敗）"
                     )
 
             except Exception as e:
@@ -157,7 +158,8 @@ class OrderManager:
                         grid.buy_price, symbol_info["min_qty"], symbol_info["step_size"]
                     )
 
-                result = self._place_order(grid.level, "SELL", grid.sell_price, quantity)
+                if grid.sell_price is not None:
+                    result = self._place_order(grid.level, "SELL", grid.sell_price, quantity)
                 if result is not None:
                     placed_count += 1
 

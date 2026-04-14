@@ -5,8 +5,9 @@
 関連ファイル: src/binance_client.py, src/bot.py
 """
 
-import requests as requests_lib
 from typing import Optional
+
+import requests as requests_lib
 
 from src.binance_client import BinanceAPIError
 

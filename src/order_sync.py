@@ -5,6 +5,8 @@
 関連ファイル: src/order_manager.py, src/grid_strategy.py
 """
 
+from typing import Optional
+
 from utils.logger import setup_logger
 
 logger = setup_logger("order_sync")
@@ -67,9 +69,9 @@ def sync_with_exchange(order_manager, strategy):
     return registered, removed
 
 
-def _match_order_to_grid(price: float, strategy, side: str) -> int:
+def _match_order_to_grid(price: float, strategy, side: str) -> Optional[int]:
     """注文価格に最も近いグリッドレベルを返す"""
-    best_level = None
+    best_level: Optional[int] = None
     best_diff = float("inf")
 
     grid_spacing = strategy.grid_spacing

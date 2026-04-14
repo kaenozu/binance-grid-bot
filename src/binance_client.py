@@ -5,15 +5,16 @@
 関連ファイル: config/settings.py, src/grid_strategy.py, src/order_manager.py
 """
 
-import time
 import hashlib
 import hmac
+import time
 from typing import Optional
 from urllib.parse import urlencode
-from urllib3.util.retry import Retry
 
 import requests
 from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 from config.settings import Settings
 from src.api_weight import APIWeightTracker
 from utils.logger import setup_logger
@@ -127,7 +128,8 @@ class BinanceClient:
                 if response.status_code >= 500:
                     wait_time = RETRY_DELAY * (2 ** min(attempt, 5))
                     logger.warning(
-                        f"サーバーエラー ({response.status_code})、{wait_time}秒後にリトライ ({attempt}回目)"
+                        f"サーバーエラー ({response.status_code})、"
+                        f"{wait_time}秒後にリトライ ({attempt}回目)"
                     )
                     time.sleep(wait_time)
                     continue
@@ -285,7 +287,8 @@ class BinanceClient:
         params = {}
         if symbol:
             params["symbol"] = symbol
-        return self._make_request("GET", "/api/v3/openOrders", params, signed=True)
+        result = self._make_request("GET", "/api/v3/openOrders", params, signed=True)
+        return result if isinstance(result, list) else [result]
 
     def get_order(self, symbol: str, order_id: int) -> dict:
         """注文の詳細を取得"""

@@ -6,9 +6,9 @@
 """
 
 import json
-import time
 import threading
-from typing import Optional, Callable
+import time
+from typing import Callable, Optional
 
 from utils.logger import setup_logger
 
@@ -41,7 +41,7 @@ class BinanceWebSocketClient:
 
     def start_price_stream(self, symbol: str):
         """MiniTicker ストリームで価格をリアルタイム受信"""
-        import websocket
+        import websocket  # type: ignore[import-untyped]
 
         self._running = True
         self._symbol = symbol

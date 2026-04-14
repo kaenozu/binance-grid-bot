@@ -5,12 +5,12 @@
 関連ファイル: src/binance_client.py, src/risk_manager.py, src/bot.py
 """
 
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional
 
-from src.binance_client import BinanceClient
 from src import persistence as persistence_module
+from src.binance_client import BinanceClient
 from utils.logger import setup_logger
 
 logger = setup_logger("portfolio")

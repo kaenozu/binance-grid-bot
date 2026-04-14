@@ -5,8 +5,6 @@
 関連ファイル: src/binance_client.py, src/grid_strategy.py, src/portfolio.py
 """
 
-from typing import Optional
-
 from config.settings import Settings
 from src.binance_client import BinanceClient
 from src.grid_strategy import GridStrategy
@@ -57,7 +55,8 @@ class RiskManager:
         """
         if current_price <= self.stop_loss_price:
             logger.warning(
-                f"[STOP_LOSS] 損切り発動! 現在価格: {current_price:.2f}, 損切り価格: {self.stop_loss_price:.2f}"
+                f"[STOP_LOSS] 損切り発動! 現在価格: {current_price:.2f}, "
+                f"損切り価格: {self.stop_loss_price:.2f}"
             )
             return True
         return False

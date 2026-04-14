@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Optional
 
 import requests
+
 from config.settings import Settings
 from src.grid_strategy import GridStrategy
 from src.portfolio import PortfolioStats
@@ -187,6 +188,7 @@ class BacktestEngine:
 
     def _place_initial_orders(self):
         """初期買い注文を記録"""
+        assert self.strategy is not None
         for grid in self.strategy.get_active_buy_grids():
             self.buy_orders[grid.level] = grid.buy_price
 
@@ -200,6 +202,7 @@ class BacktestEngine:
         low = kline["low"]
         filled_this_kline: set[int] = set()  # このK線で売り約定したグリッド
 
+        assert self.strategy is not None
         for grid in self.strategy.grids:
             # 売り約定済みのグリッドはスキップ
             if grid.level in filled_this_kline:
@@ -233,7 +236,8 @@ class BacktestEngine:
                     filled_this_kline.add(grid.level)
 
                     logger.debug(
-                        f"売り約定: グリッド {grid.level} @ {grid.sell_price:.2f}, 利益={profit:.2f}"
+                        f"売り約定: グリッド {grid.level} @ "
+                        f"{grid.sell_price:.2f}, 利益={profit:.2f}"
                     )
 
     def _calculate_portfolio_value(self, current_price: float) -> float:
@@ -260,6 +264,7 @@ class BacktestEngine:
 
     def _generate_report(self, klines: list[dict]) -> dict:
         """レポートを生成"""
+        assert self.strategy is not None
         start_price = klines[0]["close"]
         end_price = klines[-1]["close"]
         price_change = (end_price - start_price) / start_price * 100
@@ -275,7 +280,7 @@ class BacktestEngine:
             "end_price": end_price,
             "price_change_percent": price_change,
             "grid_count": self.grid_count,
-            "grid_range": f"{self.strategy.lower_price:.2f} - {self.strategy.upper_price:.2f}",
+            "grid_range": (f"{self.strategy.lower_price:.2f} - {self.strategy.upper_price:.2f}"),
             "total_trades": self.total_trades,
             "total_profit": self.total_profit,
             "roi_percent": roi,
