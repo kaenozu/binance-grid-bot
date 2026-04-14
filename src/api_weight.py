@@ -35,7 +35,7 @@ class APIWeightTracker:
             self._current_weight = 0
             self._last_reset = now
 
-        self._current_weight += used_weight
+        self._current_weight = used_weight
         self._weight_used = self._current_weight
 
     @property

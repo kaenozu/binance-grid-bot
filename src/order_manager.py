@@ -118,9 +118,7 @@ class OrderManager:
                     price=adjusted_price,
                 )
 
-                self._register_and_handle(
-                    order, grid.level, "BUY", adjusted_price, quantity
-                )
+                self._register_and_handle(order, grid.level, "BUY", adjusted_price, quantity)
                 placed_count += 1
 
             except Exception as e:
@@ -135,7 +133,7 @@ class OrderManager:
                 if buy_order_id and buy_order_id in self._active_orders:
                     quantity = self._active_orders[buy_order_id].quantity
                 else:
-                    # 再起動後などで注文記録が丢失した場合のフォールバック
+                    # 再起動後などで注文記録が失われた場合のフォールバック
                     quantity = self.strategy.get_order_quantity(
                         grid.buy_price, symbol_info["min_qty"], symbol_info["step_size"]
                     )
@@ -153,9 +151,7 @@ class OrderManager:
                     price=adjusted_price,
                 )
 
-                self._register_and_handle(
-                    order, grid.level, "SELL", adjusted_price, quantity
-                )
+                self._register_and_handle(order, grid.level, "SELL", adjusted_price, quantity)
                 placed_count += 1
 
             except Exception as e:
@@ -173,8 +169,12 @@ class OrderManager:
             新規約定リスト
         """
         new_fills: list[FillEvent] = []
+        filled_ids: set[int] = set()
 
         for order_id, order_info in list(self._active_orders.items()):
+            if order_id in filled_ids:
+                continue
+
             try:
                 if order_info.status == "FILLED":
                     executed_qty = order_info.quantity
@@ -191,16 +191,12 @@ class OrderManager:
                         self.strategy.mark_position_filled(
                             grid_level := order_info.grid_level, order_id
                         )
-                        logger.info(
-                            f"グリッド {grid_level}: 買い約定完了 @ {executed_price}"
-                        )
+                        logger.info(f"グリッド {grid_level}: 買い約定完了 @ {executed_price}")
                     elif order_info.side == "SELL":
                         self.strategy.mark_position_closed(
                             grid_level := order_info.grid_level, order_id
                         )
-                        logger.info(
-                            f"グリッド {grid_level}: 売り約定完了 @ {executed_price}"
-                        )
+                        logger.info(f"グリッド {grid_level}: 売り約定完了 @ {executed_price}")
 
                 grid_level = order_info.grid_level
                 new_fills.append(
@@ -212,11 +208,17 @@ class OrderManager:
                         order_id=order_id,
                     )
                 )
+                filled_ids.add(order_id)
 
             except Exception as e:
                 logger.error(f"注文状態確認失敗 order_id={order_id}: {e}")
 
-        self.cleanup_filled_orders()
+        for oid in filled_ids:
+            self._active_orders.pop(oid, None)
+
+        if filled_ids:
+            logger.info(f"約定済み注文クリーンアップ: {len(filled_ids)} 件")
+
         return new_fills
 
     def cancel_all_orders(self) -> int:
@@ -267,9 +269,7 @@ class OrderManager:
                 price=adjusted_price,
             )
 
-            self._register_and_handle(
-                order, grid_level, "BUY", adjusted_price, quantity
-            )
+            self._register_and_handle(order, grid_level, "BUY", adjusted_price, quantity)
             return True
 
         except Exception as e:
@@ -297,9 +297,7 @@ class OrderManager:
                 price=adjusted_price,
             )
 
-            self._register_and_handle(
-                order, grid_level, "SELL", adjusted_price, quantity
-            )
+            self._register_and_handle(order, grid_level, "SELL", adjusted_price, quantity)
             return True
 
         except Exception as e:
@@ -308,9 +306,7 @@ class OrderManager:
 
     def cleanup_filled_orders(self) -> None:
         """約定済み注文を内部管理から除去"""
-        filled_ids = [
-            oid for oid, info in self._active_orders.items() if info.status == "FILLED"
-        ]
+        filled_ids = [oid for oid, info in self._active_orders.items() if info.status == "FILLED"]
         for oid in filled_ids:
             del self._active_orders[oid]
 
@@ -343,11 +339,7 @@ class OrderManager:
         self, order: dict, grid_level: int, side: str, price: float, quantity: float
     ) -> None:
         """注文を登録し、約定済み処理を実行"""
-        avg_price = (
-            float(order.get("avgPrice") or order["price"])
-            if order.get("avgPrice")
-            else float(order["price"])
-        )
+        avg_price = float(order.get("avgPrice") or order["price"])
         executed_qty = float(order.get("executedQty") or order["origQty"])
 
         self.register_order(
@@ -369,11 +361,7 @@ class OrderManager:
         else:
             if side == "BUY":
                 self.strategy.grids[grid_level].buy_order_id = order["orderId"]
-                logger.info(
-                    f"グリッド {grid_level}: 買い注文配置 @ {price}, qty={quantity}"
-                )
+                logger.info(f"グリッド {grid_level}: 買い注文配置 @ {price}, qty={quantity}")
             else:
                 self.strategy.grids[grid_level].sell_order_id = order["orderId"]
-                logger.info(
-                    f"グリッド {grid_level}: 売り注文配置 @ {price}, qty={quantity}"
-                )
+                logger.info(f"グリッド {grid_level}: 売り注文配置 @ {price}, qty={quantity}")

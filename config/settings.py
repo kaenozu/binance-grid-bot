@@ -48,6 +48,7 @@ class Settings:
     GRID_RANGE_FACTOR: float = float(os.getenv("GRID_RANGE_FACTOR", "0.15"))
     TRADING_FEE_RATE: float = float(os.getenv("TRADING_FEE_RATE", "0.001"))
     CLOSE_ON_STOP: bool = os.getenv("CLOSE_ON_STOP", "true").lower() == "true"
+    PERSIST_INTERVAL: int = int(os.getenv("PERSIST_INTERVAL", "60"))
 
     @classmethod
     def validate(cls) -> list[str]:

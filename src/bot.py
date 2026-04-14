@@ -206,7 +206,7 @@ class GridBot:
                 self._display_status()
                 self._last_status_time = now
 
-            persist_interval = Settings.STATUS_DISPLAY_INTERVAL
+            persist_interval = Settings.PERSIST_INTERVAL
             if now - self._last_persist_time >= persist_interval:
                 self._persist_state()
                 self._last_persist_time = now
@@ -221,6 +221,18 @@ class GridBot:
                     grid.buy_order_id = None
                     grid.sell_order_id = None
                 self._place_initial_orders()
+                open_positions = [
+                    g for g in self.strategy.grids if g.position_filled and g.sell_price
+                ]
+                for grid in open_positions:
+                    symbol_info = self.client.get_symbol_info(self.strategy.symbol)
+                    qty = self.strategy.get_order_quantity(
+                        grid.buy_price,
+                        symbol_info["min_qty"] if symbol_info else 0,
+                        symbol_info["step_size"] if symbol_info else 0,
+                    )
+                    if qty > 0:
+                        self._place_sell_for_grid(grid.level, qty)
 
         except Exception as e:
             self.consecutive_errors += 1
@@ -237,7 +249,7 @@ class GridBot:
 
     def _display_status(self):
         """ステータスをCUIに表示"""
-        stats = self.portfolio.get_stats()
+        stats = self.portfolio.refresh_stats()
         grid_status = self.strategy.grid_status
         risk_status = self.risk_manager.risk_status
 
@@ -280,8 +292,9 @@ class GridBot:
             logger.error(f"エクスポート失敗: {e}")
 
     def _emergency_stop(self):
-        """緊急停止（オープンポジションを成行決済して終了）"""
+        """緊急停止処理（オープンポジションを成行決済して終了）"""
         logger.warning("緊急停止処理開始...")
+        self._persist_state()
         self.is_running = False
         self.order_manager.cancel_all_orders()
         self._close_open_positions()
@@ -301,15 +314,25 @@ class GridBot:
         )
         step_size = symbol_info["step_size"] if symbol_info else 0
         min_qty = symbol_info["min_qty"] if symbol_info else 0
-        for grid in open_positions:
-            try:
-                balances = self.client.get_account_balance()
-                if base_asset not in balances:
-                    continue
-                available = balances[base_asset]["free"]
-                if available <= 0:
-                    continue
+        try:
+            balances = self.client.get_account_balance()
+        except Exception as e:
+            logger.error(f"残高取得失敗: {e}")
+            return
 
+        if base_asset not in balances:
+            logger.error(f"残高がありません: {base_asset}")
+            return
+
+        available = balances[base_asset]["free"]
+        if available <= 0:
+            logger.warning(f"{base_asset} の残高がありません")
+            return
+
+        for grid in open_positions:
+            if available <= 0:
+                break
+            try:
                 qty_per_grid = self.strategy.get_order_quantity(
                     grid.buy_price, min_qty=min_qty, step_size=step_size
                 )
@@ -332,6 +355,7 @@ class GridBot:
                     order_id=result["orderId"],
                     grid_level=grid.level,
                 )
+                available -= filled_qty
                 grid.position_filled = False
                 logger.info(f"グリッド {grid.level}: 緊急成行決済 {filled_qty} @ {filled_price}")
             except Exception as e:

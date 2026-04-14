@@ -111,7 +111,10 @@ class Portfolio:
 
         self.trades.append(trade)
         if len(self.trades) > self._max_trades:
-            self.trades = self.trades[-self._max_trades // 2 :]
+            unmatched_buys = [t for t in self.trades if t.side == "BUY" and not t.matched]
+            matched_trades = [t for t in self.trades if t.matched or t.side == "SELL"]
+            matched_to_keep = matched_trades[-(self._max_trades - len(unmatched_buys)) :]
+            self.trades = unmatched_buys + matched_to_keep
         self.stats.total_trades += 1
         self.stats.last_update = datetime.now()
 
@@ -121,7 +124,7 @@ class Portfolio:
             buy_trade = self.find_matching_buy_trade(grid_level)
             if buy_trade:
                 profit = (price - buy_trade.price) * quantity
-                fee_rate = getattr(self, "_fee_rate", 0.0)
+                fee_rate = self._fee_rate
                 if fee_rate > 0 and buy_trade:
                     buy_fee = buy_trade.price * quantity * fee_rate
                     sell_fee = price * quantity * fee_rate
@@ -167,18 +170,26 @@ class Portfolio:
         return None
 
     def calculate_unrealized_pnl(self, current_price: float):
-        """未実現損益を計算"""
+        """未実現損益を計算（手数料反映）"""
         unrealized = 0.0
+        fee_rate = self._fee_rate
 
         for trade in self.trades:
             if trade.side == "BUY" and not trade.matched:
-                unrealized += (current_price - trade.price) * trade.quantity
+                gross = (current_price - trade.price) * trade.quantity
+                if fee_rate > 0:
+                    gross -= trade.price * trade.quantity * fee_rate
+                unrealized += gross
 
         self.stats.unrealized_profit = unrealized
         self.stats.total_profit = self.stats.realized_profit + unrealized
 
     def get_stats(self) -> PortfolioStats:
-        """統計情報を返す"""
+        """統計情報（キャッシュ）を返す"""
+        return self.stats
+
+    def refresh_stats(self) -> PortfolioStats:
+        """統計情報を最新に更新"""
         self._update_balance()
         return self.stats
 

@@ -40,7 +40,7 @@ class PaperClient:
         import requests
 
         response = requests.get(
-            "https://api.binance.com/api/v3/ticker/price",
+            "https://testnet.binance.vision/api/v3/ticker/price",
             params={"symbol": symbol},
             timeout=10,
         )
