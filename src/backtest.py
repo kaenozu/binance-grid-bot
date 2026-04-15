@@ -133,6 +133,7 @@ class BacktestEngine:
         return lower, upper
 
     def _place_initial_orders(self):
+        assert self.strategy is not None
         for grid in self.strategy.get_active_buy_grids():
             self.buy_orders[grid.level] = grid.buy_price
 
@@ -144,6 +145,7 @@ class BacktestEngine:
         """
         high, low = kline["high"], kline["low"]
         filled_this_kline: set[int] = set()
+        assert self.strategy is not None
 
         for grid in self.strategy.grids:
             if grid.level in filled_this_kline:
@@ -200,6 +202,7 @@ class BacktestEngine:
         final_value = self._calculate_portfolio_value(end_price)
         roi = (final_value - self.investment_amount) / self.investment_amount * 100
 
+        assert self.strategy is not None
         return {
             "symbol": self.symbol,
             "period": f"{klines[0]['open_time']} ~ {klines[-1]['open_time']}",
