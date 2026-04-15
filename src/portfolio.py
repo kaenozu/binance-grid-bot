@@ -165,6 +165,7 @@ class Portfolio:
 
         logger.info(f"取引記録追加: {side} {quantity} @ {price}")
         return profit
+
     def _settle_sell(self, trade: Trade, grid_level: int) -> tuple[float, int] | None:
         """売り決済処理（ロック内で呼ぶこと）。(profit, buy_order_id) を返すか None。"""
         buy_trade = self._find_matching_buy_locked(grid_level)
