@@ -81,15 +81,16 @@ class TestGridStrategy:
         grid_strategy.update_current_price(BASE_PRICE + 1000)
         assert grid_strategy.current_price == BASE_PRICE + 1000
 
-    def test_auto_range_is_15_percent(self):
+    def test_auto_range_is_8_percent(self):
         strategy = GridStrategy(
-            symbol="BTCUSDT",
+            symbol="ETHUSDT",
             current_price=100000.0,
             grid_count=10,
             investment_amount=1000.0,
         )
-        assert strategy.lower_price == 85000.0
-        assert abs(strategy.upper_price - 115000.0) < 0.01
+        assert strategy.lower_price == 92000.0
+        assert abs(strategy.upper_price - 108000.0) < 0.01
+
 
     def test_profit_per_grid_percent(self, grid_strategy):
         pct = grid_strategy.profit_per_grid_percent
