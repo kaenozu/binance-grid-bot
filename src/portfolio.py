@@ -270,5 +270,5 @@ class Portfolio:
         unmatched_buys = [t for t in self.trades if t.side == "BUY" and not t.matched]
         evictable = [t for t in self.trades if t.side == "SELL" or t.matched]
         keep_count = self._max_trades - len(unmatched_buys)
-        matched_to_keep = evictable[-max(keep_count, 0) :]
+        matched_to_keep = evictable[-keep_count:] if keep_count > 0 else []
         self.trades = unmatched_buys + matched_to_keep
