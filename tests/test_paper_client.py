@@ -1,5 +1,7 @@
 """ペーパートレードクライアントのテスト"""
 
+from unittest.mock import patch
+
 import pytest
 
 from src.paper_client import PaperClient
@@ -8,7 +10,8 @@ from src.paper_client import PaperClient
 class TestPaperClient:
     @pytest.fixture
     def client(self):
-        return PaperClient()
+        with patch.object(PaperClient, "get_symbol_price", return_value=74000.0):
+            return PaperClient()
 
     def test_place_order_returns_order_id(self, client):
         order = client.place_order(symbol="BTCUSDT", side="BUY", quantity=0.001, price=74000.0)
@@ -16,13 +19,15 @@ class TestPaperClient:
         assert order["status"] == "NEW"
 
     def test_market_order_fills_immediately(self, client):
-        order = client.place_order(symbol="BTCUSDT", side="BUY", quantity=0.001, price=None)
+        with patch.object(client, "get_symbol_price", return_value=74000.0):
+            order = client.place_order(symbol="BTCUSDT", side="BUY", quantity=0.001, price=None)
         assert order["status"] == "FILLED"
 
     def test_open_orders(self, client):
         client.place_order("BTCUSDT", "BUY", 0.001, 74000.0)
         client.place_order("BTCUSDT", "BUY", 0.001, 73000.0)
-        client.place_order("BTCUSDT", "BUY", 0.001, price=None)
+        with patch.object(client, "get_symbol_price", return_value=74000.0):
+            client.place_order("BTCUSDT", "BUY", 0.001, price=None)
 
         open_orders = client.get_open_orders("BTCUSDT")
         assert len(open_orders) == 2
