@@ -1,5 +1,8 @@
 """状態永続化（SQLite）
 
+ファイルの役割: グリッド状態・ポートフォリオ統計・取引履歴の保存と復元
+なぜ存在するか: ボットの再起動時に取引状態を復元するため
+関連ファイル: bot.py（メインループ）, portfolio.py（統計）, grid_strategy.py（グリッド状態）
 注意: このモジュールはメインボットループ（シングルスレッド）からの使用を想定。
 マルチスレッド環境では、呼び出し元で同期化を行うこと。
 """
@@ -249,9 +252,7 @@ def load_portfolio_stats() -> dict | None:
         "avg_profit_per_trade": row["avg_profit_per_trade"],
         "total_fees": row["total_fees"],
         "start_time": datetime.fromisoformat(row["start_time"]) if row["start_time"] else None,
-        "last_update": datetime.fromisoformat(row["last_update"])
-        if row["last_update"]
-        else None,
+        "last_update": datetime.fromisoformat(row["last_update"]) if row["last_update"] else None,
     }
 
 

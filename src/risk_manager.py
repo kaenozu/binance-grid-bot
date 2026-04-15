@@ -1,4 +1,9 @@
-"""リスク管理"""
+"""リスク管理
+
+ファイルの役割: ポジション上限・損切り判定・緊急停止ロジック
+なぜ存在するか: 損失拡大を防ぐためBotの取引を制御
+関連ファイル: bot.py（メインループ）, grid_strategy.py（戦略）, settings.py（設定）
+"""
 
 import threading
 
@@ -58,9 +63,7 @@ class RiskManager:
             new_lower_price: 新しいグリッド下限価格
         """
         with self._lock:
-            self._stop_loss_price = new_lower_price * (
-                1 - Settings.STOP_LOSS_PERCENTAGE / 100
-            )
+            self._stop_loss_price = new_lower_price * (1 - Settings.STOP_LOSS_PERCENTAGE / 100)
             logger.info(f"損切り価格更新: {self._stop_loss_price:.2f}")
 
     def check_stop_loss(self, current_price: float) -> bool:
@@ -76,8 +79,7 @@ class RiskManager:
             sl_price = self._stop_loss_price
         if current_price <= sl_price:
             logger.warning(
-                f"[STOP_LOSS] 損切り発動! 現在価格: {current_price:.2f}, "
-                f"損切り価格: {sl_price:.2f}"
+                f"[STOP_LOSS] 損切り発動! 現在価格: {current_price:.2f}, 損切り価格: {sl_price:.2f}"
             )
             return True
         return False

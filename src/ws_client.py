@@ -1,4 +1,9 @@
-"""Binance WebSocket クライアント"""
+"""Binance WebSocket クライアント
+
+ファイルの役割: リアルタイム価格ストリームの受信
+なぜ存在するか: ポーリング 대신高速な価格更新を実現するため
+関連ファイル: bot.py（メインループ）, binance_client.py（REST API）
+"""
 
 import json
 import threading

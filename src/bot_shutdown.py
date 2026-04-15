@@ -1,4 +1,9 @@
-"""ボット停止・エクスポート処理"""
+"""ボット停止・エクスポート処理
+
+ファイルの役割: ボット停止時の注文キャンセル・エクスポート処理
+なぜ存在するか: 安全かつ orderly なボット停止のため
+関連ファイル: bot.py（メインループ）, exporter.py（エクスポート）, portfolio.py（統計）
+"""
 
 from datetime import datetime
 from pathlib import Path
@@ -35,11 +40,7 @@ def close_open_positions(client, strategy, portfolio):
     symbol_info = client.get_symbol_info(strategy.symbol)
 
     # symbol_info フォールバック
-    base_asset = (
-        symbol_info["base_asset"]
-        if symbol_info
-        else strategy.symbol.replace("USDT", "")
-    )
+    base_asset = symbol_info["base_asset"] if symbol_info else strategy.symbol.replace("USDT", "")
     step_size = symbol_info["step_size"] if symbol_info else 0
     min_qty = symbol_info["min_qty"] if symbol_info else 0
     min_notional = symbol_info["min_notional"] if symbol_info else 0
@@ -86,8 +87,11 @@ def close_open_positions(client, strategy, portfolio):
             filled_qty = float(result.get("executedQty", result.get("origQty", sell_qty)))
             filled_price = float(result.get("avgPrice") or result.get("price", 0))
             portfolio.record_trade(
-                side="SELL", price=filled_price, quantity=filled_qty,
-                order_id=result["orderId"], grid_level=grid.level,
+                side="SELL",
+                price=filled_price,
+                quantity=filled_qty,
+                order_id=result["orderId"],
+                grid_level=grid.level,
             )
             available -= filled_qty
             grid.position_filled = False

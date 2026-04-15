@@ -1,4 +1,9 @@
-"""注文管理"""
+"""注文管理
+
+ファイルの役割: グリッド注文的配置・約定チェック・キャンセルを管理
+なぜ存在するか: ボットと取引所の間で注文状態を同期するための中心的クラス
+関連ファイル: bot.py（メインループ）, binance_client.py（API通信）, grid_strategy.py（戦略）
+"""
 
 import math
 from dataclasses import dataclass, field
@@ -245,8 +250,11 @@ class OrderManager:
             self._apply_fill_to_strategy(info.side, info.grid_level, oid)
             fills.append(
                 FillEvent(
-                    grid=info.grid_level, side=info.side,
-                    price=info.price, quantity=info.quantity, order_id=oid,
+                    grid=info.grid_level,
+                    side=info.side,
+                    price=info.price,
+                    quantity=info.quantity,
+                    order_id=oid,
                 )
             )
         logger.info(f"残留約定済み注文クリーンアップ: {len(stale_ids)} 件")
@@ -273,8 +281,11 @@ class OrderManager:
                 )
                 fills.append(
                     FillEvent(
-                        grid=order_info.grid_level, side=order_info.side,
-                        price=executed_price, quantity=executed_qty, order_id=order_id,
+                        grid=order_info.grid_level,
+                        side=order_info.side,
+                        price=executed_price,
+                        quantity=executed_qty,
+                        order_id=order_id,
                     )
                 )
                 filled_ids.add(order_id)

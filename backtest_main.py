@@ -1,4 +1,9 @@
-"""バックテスト実行スクリプト"""
+"""バックテスト実行スクリプト
+
+ファイルの役割: 過去データを使ったバックテストの実行
+なぜ存在するか: ユーザーが戦略をテストする入口
+関連ファイル: src/backtest.py（バックテストクラス）, src/grid_strategy.py（戦略）
+"""
 
 import argparse
 import json
@@ -135,9 +140,7 @@ def main():
     print("=" * 60)
 
     # JSONで保存
-    output_file = (
-        f"backtest_{symbol}_{report['period'].replace(' ', '_').replace(':', '')}.json"
-    )
+    output_file = f"backtest_{symbol}_{report['period'].replace(' ', '_').replace(':', '')}.json"
     try:
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(report, f, indent=2, default=str)

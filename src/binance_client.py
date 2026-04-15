@@ -1,4 +1,9 @@
-"""Binance API クライアント"""
+"""Binance API クライアント
+
+ファイルの役割: Binance APIへの注文・残高・価格取得等功能を提供
+なぜ存在するか: 取引所との通信を抽象化するため
+関連ファイル: bot.py（メインループ）, settings.py（設定）, api_weight.py（レート制限）
+"""
 
 import hashlib
 import hmac

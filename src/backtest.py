@@ -1,4 +1,9 @@
-"""バックテスト機能"""
+"""バックテスト機能
+
+ファイルの役割:  과거価格データを使って取引戦略をシミュレーション
+なぜ存在するか: 実資金リスクなく戦略の有効性を検証するため
+関連ファイル: grid_strategy.py（戦略）, binance_client.py（価格取得）, exporter.py（結果出力）
+"""
 
 from datetime import datetime
 
@@ -82,6 +87,7 @@ class BacktestEngine:
         self.total_profit = 0.0
         self.max_drawdown = 0.0
         self.stop_loss_triggered = False
+
     def run(self, klines: list[dict]) -> dict:
         """バックテストを実行。空のdictはエラー。"""
         if not klines:
@@ -184,12 +190,9 @@ class BacktestEngine:
         if not positions:
             return self.investment_amount + self.total_profit
 
-        total_cost = sum(
-            self.buy_orders.get(level, 0) * qty for level, qty in positions.items()
-        )
+        total_cost = sum(self.buy_orders.get(level, 0) * qty for level, qty in positions.items())
         buy_fees = sum(
-            self.buy_orders.get(level, 0) * qty * self.fee_rate
-            for level, qty in positions.items()
+            self.buy_orders.get(level, 0) * qty * self.fee_rate for level, qty in positions.items()
         )
         sell_fees = sum(qty * current_price * self.fee_rate for qty in positions.values())
         cash = self.investment_amount - total_cost
