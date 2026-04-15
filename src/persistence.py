@@ -241,6 +241,19 @@ def load_portfolio_stats() -> dict | None:
         conn.close()
 
 
+def update_trade_matched(order_id: int, matched: bool):
+    """指定order_idのトレードのmatchedフラグを更新"""
+    conn = _get_connection()
+    try:
+        conn.execute(
+            "UPDATE trades SET matched = ? WHERE order_id = ?",
+            (int(matched), order_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 def load_trades() -> list[dict]:
     if not DB_PATH.exists():
         return []
