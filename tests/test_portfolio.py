@@ -183,9 +183,7 @@ class TestPortfolio:
 
     def test_record_sell_trade_with_fee(self, mock_client_for_portfolio):
         fee_rate = 0.001
-        portfolio = Portfolio(
-            mock_client_for_portfolio, "BTCUSDT", "USDT", fee_rate=fee_rate
-        )
+        portfolio = Portfolio(mock_client_for_portfolio, "BTCUSDT", "USDT", fee_rate=fee_rate)
         portfolio.record_trade(
             side="BUY",
             price=BASE_PRICE,
@@ -226,3 +224,46 @@ class TestPortfolio:
         report = portfolio.generate_report()
         assert "ポートフォリオレポート" in report
         assert "10000.00" in report
+
+    def test_calculate_unrealized_pnl_with_multiple_positions(self, portfolio):
+        portfolio.record_trade(
+            side="BUY",
+            price=BASE_PRICE,
+            quantity=0.002,
+            order_id=12345,
+            grid_level=0,
+        )
+        portfolio.record_trade(
+            side="BUY",
+            price=BASE_PRICE + GRID_SPACING,
+            quantity=0.002,
+            order_id=12346,
+            grid_level=1,
+        )
+        portfolio.calculate_unrealized_pnl(BASE_PRICE + GRID_SPACING * 2)
+        total_unrealized = (GRID_SPACING * 2) * 0.002 + (GRID_SPACING) * 0.002
+        assert abs(portfolio.stats.unrealized_profit - total_unrealized) < 0.01
+
+    def test_refresh_stats(self, portfolio):
+        portfolio.record_trade(
+            side="BUY",
+            price=BASE_PRICE,
+            quantity=0.002,
+            order_id=12345,
+            grid_level=5,
+        )
+        stats = portfolio.refresh_stats()
+        assert stats.total_trades == 1
+        assert stats.current_balance == 10000.0
+
+    def test_get_trade_history_all(self, portfolio):
+        for i in range(5):
+            portfolio.record_trade(
+                side="BUY",
+                price=BASE_PRICE,
+                quantity=0.002,
+                order_id=12340 + i,
+                grid_level=i,
+            )
+        history = portfolio.get_trade_history()
+        assert len(history) == 5

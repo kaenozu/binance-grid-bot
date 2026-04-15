@@ -17,3 +17,18 @@ markers = [
     "unit: unit tests",
     "integration: integration tests",
 ]
+
+[tool.coverage.run]
+source = ["src", "config"]
+omit = ["*/tests/*", "*/test_*.py"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+fail_under = 70
+show_missing = true
