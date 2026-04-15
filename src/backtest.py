@@ -123,10 +123,11 @@ class BacktestEngine:
                 continue
 
             self._check_fills(kline)
-            peak_value = max(peak_value, self._calculate_portfolio_value(current_price))
+            current_value = self._calculate_portfolio_value(current_price)
+            peak_value = max(peak_value, current_value)
 
             if peak_value > 0:
-                drawdown = (peak_value - current_price) / peak_value * 100
+                drawdown = (peak_value - current_value) / peak_value * 100
                 self.max_drawdown = max(self.max_drawdown, drawdown)
 
         return self._generate_report(klines)
