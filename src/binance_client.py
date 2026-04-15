@@ -17,7 +17,6 @@ logger = setup_logger("binance_client")
 
 RETRY_DELAY = 1
 MAX_CONNECTION_RETRIES = 10
-SYMBOL_CACHE_TTL = 300
 SYMBOL_CACHE_TTL = 300  # シンボル情報のキャッシュ有効期限（秒）
 
 
@@ -104,10 +103,7 @@ class BinanceClient:
                 response = self._send_request(method, url, params)
             except requests.exceptions.ConnectionError as e:
                 cause_str = str(e.__cause__) if e.__cause__ else str(e)
-                is_dns = (
-                    "NameResolutionError" in cause_str
-                    or "getaddrinfo failed" in cause_str
-                )
+                is_dns = "NameResolutionError" in cause_str or "getaddrinfo failed" in cause_str
                 tag = "DNS解決" if is_dns else "接続"
                 if not self._can_retry(attempt, f"{tag}エラー"):
                     raise BinanceAPIError(
@@ -127,12 +123,8 @@ class BinanceClient:
                 if not self._can_retry(
                     attempt, f"レートリミット（{MAX_CONNECTION_RETRIES}回リトライ後）"
                 ):
-                    raise BinanceAPIError(
-                        f"レートリミット（{MAX_CONNECTION_RETRIES}回リトライ後）"
-                    )
-                retry_after = int(
-                    response.headers.get("Retry-After", RETRY_DELAY * (2**attempt))
-                )
+                    raise BinanceAPIError(f"レートリミット（{MAX_CONNECTION_RETRIES}回リトライ後）")
+                retry_after = int(response.headers.get("Retry-After", RETRY_DELAY * (2**attempt)))
                 logger.warning(f"レートリミット到達、{retry_after}秒後にリトライ ({attempt}回目)")
                 time.sleep(retry_after)
                 continue

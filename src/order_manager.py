@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 
 from src.binance_client import BinanceClient
 from src.grid_strategy import GridStrategy
+from utils.price_utils import adjust_price
 from utils.logger import setup_logger
 
 logger = setup_logger("order_manager")
@@ -173,7 +174,7 @@ class OrderManager:
         if quantity <= 0:
             return None
 
-        adjusted_price = self._adjust_price(price, symbol_info["tick_size"], side=side)
+        adjusted_price = adjust_price(price, symbol_info["tick_size"], side=side)
         order = self.client.place_order(
             symbol=self.strategy.symbol,
             side=side,
@@ -325,10 +326,3 @@ class OrderManager:
             else:
                 grid.sell_order_id = order["orderId"]
             logger.info(f"グリッド {grid_level}: {side}注文配置 @ {price}, qty={quantity}")
-
-    @staticmethod
-    def _adjust_price(price: float, tick_size: float, side: str = "BUY") -> float:
-        """価格をtick_sizeの倍数に調整（BUY: 切り下げ, SELL: 切り上げ）"""
-        if side == "BUY":
-            return math.floor(price / tick_size) * tick_size
-        return math.ceil(price / tick_size) * tick_size
