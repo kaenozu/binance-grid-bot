@@ -1,14 +1,8 @@
-"""
-ファイルパス: src/binance_client.py
-概要: Binance API クライアント
-説明: Binance の現物取引に必要な API 呼び出しをカプセル化
-関連ファイル: config/settings.py, src/grid_strategy.py, src/order_manager.py
-"""
+"""Binance API クライアント"""
 
 import hashlib
 import hmac
 import time
-from typing import Optional
 from urllib.parse import urlencode
 
 import requests
@@ -23,13 +17,12 @@ logger = setup_logger("binance_client")
 
 RETRY_DELAY = 1
 MAX_CONNECTION_RETRIES = 10
+SYMBOL_CACHE_TTL = 300
 SYMBOL_CACHE_TTL = 300  # シンボル情報のキャッシュ有効期限（秒）
 
 
 class BinanceAPIError(Exception):
     """Binance API 関連のエラー"""
-
-    pass
 
 
 class BinanceClient:
@@ -71,6 +64,8 @@ class BinanceClient:
         self.close()
         return False
 
+    # ── 署名・リクエスト ──────────────────────────────────────────────
+
     def _generate_signature(self, query_string: str) -> str:
         """署名を生成"""
         return hmac.new(
@@ -79,27 +74,20 @@ class BinanceClient:
             hashlib.sha256,
         ).hexdigest()
 
+    def _sign_params(self, params: dict) -> None:
+        """params をインプレースで署名（timestamp と signature を付加）"""
+        params["timestamp"] = int(time.time() * 1000)
+        query_string = urlencode(params)
+        params["signature"] = self._generate_signature(query_string)
+
     def _make_request(
         self,
         method: str,
         endpoint: str,
-        params: Optional[dict] = None,
+        params: dict | None = None,
         signed: bool = False,
     ) -> dict:
-        """API リクエストを実行（リトライ付き）
-
-        Args:
-            method: HTTP メソッド (GET/POST/DELETE)
-            endpoint: API エンドポイント
-            params: リクエストパラメータ
-            signed: 署名付きリクエストかどうか
-
-        Returns:
-            API レスポンス
-
-        Raises:
-            BinanceAPIError: API エラー時
-        """
+        """API リクエストを実行（リトライ付き）"""
         url = f"{self.base_url}{endpoint}"
         params = dict(params) if params else {}
 
@@ -110,102 +98,104 @@ class BinanceClient:
         while True:
             attempt += 1
             if signed:
-                params["timestamp"] = int(time.time() * 1000)
-                query_string = urlencode(params)
-                params["signature"] = self._generate_signature(query_string)
+                self._sign_params(params)
+
             try:
                 response = self._send_request(method, url, params)
-                if response.status_code == 429:
-                    if attempt >= MAX_CONNECTION_RETRIES:
-                        raise BinanceAPIError(
-                            f"レートリミット（{MAX_CONNECTION_RETRIES}回リトライ後）"
-                        )
-                    retry_after = int(
-                        response.headers.get("Retry-After", RETRY_DELAY * (2**attempt))
-                    )
-                    logger.warning(
-                        f"レートリミット到達、{retry_after}秒後にリトライ ({attempt}回目)"
-                    )
-                    time.sleep(retry_after)
-                    continue
-                if response.status_code >= 500:
-                    if attempt >= MAX_CONNECTION_RETRIES:
-                        raise BinanceAPIError(
-                            f"サーバーエラー ({response.status_code}) "
-                            f"（{MAX_CONNECTION_RETRIES}回リトライ後）"
-                        )
-                    wait_time = RETRY_DELAY * (2 ** min(attempt, 5))
-                    logger.warning(
-                        f"サーバーエラー ({response.status_code})、"
-                        f"{wait_time}秒後にリトライ ({attempt}回目)"
-                    )
-                    time.sleep(wait_time)
-                    continue
-                response.raise_for_status()
-                if self._weight_tracker:
-                    used = response.headers.get("X-MBX-USED-WEIGHT")
-                    if used:
-                        self._weight_tracker.update_weight(int(used))
-                return response.json()
             except requests.exceptions.ConnectionError as e:
-                if attempt >= MAX_CONNECTION_RETRIES:
+                cause_str = str(e.__cause__) if e.__cause__ else str(e)
+                is_dns = (
+                    "NameResolutionError" in cause_str
+                    or "getaddrinfo failed" in cause_str
+                )
+                tag = "DNS解決" if is_dns else "接続"
+                if not self._can_retry(attempt, f"{tag}エラー"):
                     raise BinanceAPIError(
-                        f"接続エラー（{MAX_CONNECTION_RETRIES}回リトライ後）: {e}"
+                        f"{tag}エラー（{MAX_CONNECTION_RETRIES}回リトライ後）: {e}"
                     ) from e
-                cause = e.args[0] if e.args else ""
-                is_dns_failure = "NameResolutionError" in cause or "getaddrinfo failed" in cause
-                if is_dns_failure:
-                    wait_time = 60
-                    logger.warning(
-                        f"DNS解決失敗（接続エラー）、{wait_time}秒後にリトライ ({attempt}回目): {e}"
-                    )
-                else:
-                    wait_time = min(RETRY_DELAY * (2 ** min(attempt, 5)), 60)
-                    logger.warning(f"接続エラー、{wait_time}秒後にリトライ ({attempt}回目): {e}")
-                time.sleep(wait_time)
-                continue
-            except requests.exceptions.HTTPError as e:
-                status_code = getattr(e.response, "status_code", 0) if e.response else 0
-                if 400 <= status_code < 500:
-                    response_text = e.response.text if e.response else ""
-                    logger.error(f"クライアントエラー ({status_code}): {response_text}")
-                    raise BinanceAPIError(
-                        f"クライアントエラー: {status_code} - {response_text}"
-                    ) from e
-                wait_time = RETRY_DELAY * (2 ** min(attempt, 5))
-                logger.warning(f"HTTP エラー、{wait_time}秒後にリトライ ({attempt}回目)")
-                time.sleep(wait_time)
-                continue
-            except (requests.exceptions.Timeout, requests.exceptions.RequestException) as e:
-                wait_time = min(RETRY_DELAY * (2 ** min(attempt, 5)), 60)
-                logger.warning(f"リクエストエラー、{wait_time}秒後にリトライ ({attempt}回目): {e}")
-                time.sleep(wait_time)
+                wait = self._backoff(attempt)
+                logger.warning(f"{tag}エラー、{wait}秒後にリトライ ({attempt}回目): {e}")
+                time.sleep(wait)
                 continue
 
-    def _send_request(self, method: str, url: str, params: dict) -> requests.Response:
-        """HTTP リクエストを送信"""
-        if method == "GET":
-            return self.session.get(url, params=params, timeout=10)
-        elif method == "POST":
-            return self.session.post(url, data=params, timeout=10)
-        elif method == "DELETE":
-            return self.session.delete(url, params=params, timeout=10)
-        else:
-            raise ValueError(f"サポートされていない HTTP メソッド: {method}")
+            # ── 再試行不要なレスポンス ──
+            if response.status_code < 400:
+                self._update_weight(response)
+                return response.json()
+
+            if response.status_code == 429:
+                if not self._can_retry(
+                    attempt, f"レートリミット（{MAX_CONNECTION_RETRIES}回リトライ後）"
+                ):
+                    raise BinanceAPIError(
+                        f"レートリミット（{MAX_CONNECTION_RETRIES}回リトライ後）"
+                    )
+                retry_after = int(
+                    response.headers.get("Retry-After", RETRY_DELAY * (2**attempt))
+                )
+                logger.warning(f"レートリミット到達、{retry_after}秒後にリトライ ({attempt}回目)")
+                time.sleep(retry_after)
+                continue
+
+            if response.status_code >= 500:
+                if not self._can_retry(attempt, f"サーバーエラー ({response.status_code})"):
+                    raise BinanceAPIError(
+                        f"サーバーエラー ({response.status_code}) "
+                        f"（{MAX_CONNECTION_RETRIES}回リトライ後）"
+                    )
+                wait = self._backoff(attempt)
+                logger.warning(f"サーバーエラー ({response.status_code})、{wait}秒後にリトライ")
+                time.sleep(wait)
+                continue
+
+            # 4xx ── リトライしない（クライアントエラー）
+            try:
+                response.raise_for_status()
+            except requests.exceptions.HTTPError as e:
+                body = e.response.text if e.response else ""
+                status = getattr(e.response, "status_code", 0)
+                logger.error(f"クライアントエラー ({status}): {body}")
+                raise BinanceAPIError(f"クライアントエラー: {status} - {body}") from e
+
+            # raise_for_status が通った（到達不能だが型チェッカー対策）
+            return response.json()
+
+    def _update_weight(self, response: requests.Response) -> None:
+        """X-MBX-USED-WEIGHT ヘッダーからウェイトを更新"""
+        if not self._weight_tracker:
+            return
+        used = response.headers.get("X-MBX-USED-WEIGHT")
+        if used:
+            self._weight_tracker.update_weight(int(used))
 
     @staticmethod
-    def _format_value(value: float, precision: int) -> str:
-        """指定精度でフォーマット（不要なゼロを除去）"""
-        return f"{value:.{precision}f}".rstrip("0").rstrip(".")
+    def _can_retry(attempt: int, msg: str) -> bool:
+        return attempt < MAX_CONNECTION_RETRIES
+
+    @staticmethod
+    def _backoff(attempt: int, cap: float = 60.0) -> float:
+        return min(RETRY_DELAY * (2 ** min(attempt, 5)), cap)
+
+    def _send_request(self, method: str, url: str, params: dict) -> requests.Response:
+        """HTTP リクエストを送信（リトライなしの単発リクエスト）"""
+        try:
+            if method == "GET":
+                return self.session.get(url, params=params, timeout=10)
+            if method == "POST":
+                return self.session.post(url, data=params, timeout=10)
+            if method == "DELETE":
+                return self.session.delete(url, params=params, timeout=10)
+            raise ValueError(f"サポートされていない HTTP メソッド: {method}")
+        except requests.exceptions.ConnectionError:
+            raise  # _make_request 側で catch してリトライ
+        except (requests.exceptions.Timeout, requests.exceptions.RequestException) as e:
+            raise BinanceAPIError(f"リクエストエラー: {e}") from e
+
+    # ── 公開 API ──────────────────────────────────────────────────────
 
     def get_account_balance(self) -> dict:
-        """アカウント残高を取得
-
-        Returns:
-            残高情報 {"USDT": {"free": 100.0, "locked": 0.0}, ...}
-        """
+        """アカウント残高を取得"""
         data = self._make_request("GET", "/api/v3/account", signed=True)
-
         balances = {}
         for balance in data.get("balances", []):
             asset = balance["asset"]
@@ -213,7 +203,6 @@ class BinanceClient:
             locked = float(balance["locked"])
             if free > 0 or locked > 0:
                 balances[asset] = {"free": free, "locked": locked}
-
         return balances
 
     def get_symbol_price(self, symbol: str) -> float:
@@ -221,7 +210,7 @@ class BinanceClient:
         data = self._make_request("GET", "/api/v3/ticker/price", {"symbol": symbol})
         return float(data["price"])
 
-    def get_symbol_info(self, symbol: str) -> Optional[dict]:
+    def get_symbol_info(self, symbol: str) -> dict | None:
         """取引ペアの情報を取得（キャッシュ付き、TTL期限切れで更新）"""
         now = time.time()
         if symbol in self._symbol_cache:
@@ -231,14 +220,19 @@ class BinanceClient:
             logger.debug(f"シンボルキャッシュ期限切れ: {symbol}")
 
         data = self._make_request("GET", "/api/v3/exchangeInfo", {"symbol": symbol})
-
         symbols = data.get("symbols", [])
         if not symbols:
             return None
 
-        s = symbols[0]
+        info = self._parse_symbol_info(symbols[0])
+        self._symbol_cache[symbol] = (info, now)
+        return info
+
+    @staticmethod
+    def _parse_symbol_info(s: dict) -> dict:
+        """exchangeInfo レスポンスの1シンボルをパース"""
         filters = {f["filterType"]: f for f in s["filters"]}
-        info = {
+        return {
             "symbol": s["symbol"],
             "status": s["status"],
             "base_asset": s["baseAsset"],
@@ -251,23 +245,11 @@ class BinanceClient:
             "min_notional": float(filters.get("MIN_NOTIONAL", {}).get("minNotional", 0)),
             "tick_size": float(filters.get("PRICE_FILTER", {}).get("tickSize", 0)),
         }
-        self._symbol_cache[symbol] = (info, now)
-        return info
 
     def place_order(
-        self, symbol: str, side: str, quantity: float, price: Optional[float] = None
+        self, symbol: str, side: str, quantity: float, price: float | None = None
     ) -> dict:
-        """注文を出す
-
-        Args:
-            symbol: 取引ペア
-            side: BUY または SELL
-            quantity: 数量
-            price: 価格（指値の場合必須、成行の場合は None）
-
-        Returns:
-            注文情報
-        """
+        """注文を出す"""
         params = {
             "symbol": symbol,
             "side": side,
@@ -275,10 +257,8 @@ class BinanceClient:
             "quantity": self._format_value(quantity, 8),
             "timeInForce": "GTC" if price else None,
         }
-
         if price:
             params["price"] = self._format_value(price, 8)
-
         params = {k: v for k, v in params.items() if v is not None}
 
         logger.info(f"注文実行: {side} {quantity} {symbol} @ {price or 'MARKET'}")
@@ -290,11 +270,9 @@ class BinanceClient:
         logger.info(f"注文キャンセル: {symbol} - {order_id}")
         return self._make_request("DELETE", "/api/v3/order", params, signed=True)
 
-    def get_open_orders(self, symbol: Optional[str] = None) -> list[dict]:
+    def get_open_orders(self, symbol: str | None = None) -> list[dict]:
         """オープン中の注文を取得"""
-        params = {}
-        if symbol:
-            params["symbol"] = symbol
+        params = {"symbol": symbol} if symbol else {}
         result = self._make_request("GET", "/api/v3/openOrders", params, signed=True)
         return result if isinstance(result, list) else [result]
 
@@ -302,3 +280,10 @@ class BinanceClient:
         """注文の詳細を取得"""
         params = {"symbol": symbol, "orderId": order_id}
         return self._make_request("GET", "/api/v3/order", params, signed=True)
+
+    # ── ユーティリティ ────────────────────────────────────────────────
+
+    @staticmethod
+    def _format_value(value: float, precision: int) -> str:
+        """指定精度でフォーマット（不要なゼロを除去）"""
+        return f"{value:.{precision}f}".rstrip("0").rstrip(".")

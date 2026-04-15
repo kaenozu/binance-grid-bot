@@ -51,9 +51,9 @@ binance-grid-bot/
 │   ├── persistence.py        # SQLite 状態永続化
 │   ├── exporter.py           # CSV/JSON エクスポート
 │   ├── bot.py                # メイン制御
-│   ├── ws_client.py          # WebSocket（未統合）
-│   ├── api_weight.py         # API ウェイト管理（未統合）
-│   ├── multi_bot.py          # マルチペア（未統合）
+│   ├── ws_client.py          # WebSocket リアルタイム価格
+│   ├── api_weight.py         # API ウェイト管理
+│   ├── multi_bot.py          # マルチペア対応
 │   ├── paper_client.py       # ペーパートレード（未統合）
 │   └── backtest.py           # バックテストエンジン
 ├── utils/

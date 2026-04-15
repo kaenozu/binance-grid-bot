@@ -1,9 +1,4 @@
-"""
-ファイルパス: tests/test_exporter.py
-概要: トレードエクスポートのテスト
-説明: CSV/JSON出力機能を検証
-関連ファイル: src/exporter.py, src/portfolio.py
-"""
+"""トレードエクスポートのテスト"""
 
 import csv
 import json
@@ -22,7 +17,7 @@ def sample_trades():
             timestamp=datetime(2026, 1, 1, 10, 0, 0),
             symbol="BTCUSDT",
             side="BUY",
-            price=50000.0,
+            price=74000.0,
             quantity=0.002,
             order_id=100,
             grid_level=5,
@@ -79,7 +74,7 @@ def test_export_empty(tmp_path):
 def test_export_creates_directory(tmp_path):
     filepath = tmp_path / "subdir" / "trades.csv"
     export_trades_csv(
-        [Trade(datetime.now(), "BTCUSDT", "BUY", 50000.0, 0.001, 1, 0)],
+        [Trade(datetime.now(), "BTCUSDT", "BUY", 74000.0, 0.001, 1, 0)],
         filepath,
     )
     assert filepath.exists()

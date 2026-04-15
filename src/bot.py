@@ -1,14 +1,7 @@
-"""
-ファイルパス: src/bot.py
-概要: グリッド取引ボット メインループ
-説明: 価格監視、注文管理、リスク管理、ステータス表示、永続化、エクスポートを統合
-関連ファイル: src/binance_client.py, src/grid_strategy.py, src/order_manager.py,
-  src/risk_manager.py, src/portfolio.py, src/persistence.py, src/order_sync.py, src/exporter.py
-"""
+"""グリッド取引ボット メインループ"""
 
 import time
 import traceback
-from typing import Optional
 
 from config.settings import Settings
 from src import order_sync, persistence
@@ -134,7 +127,7 @@ class GridBot:
             logger.error(f"予期せぬエラー: {e}", exc_info=True)
             self.stop()
 
-    def _place_initial_orders(self) -> Optional[dict]:
+    def _place_initial_orders(self) -> dict | None:
         """初期注文を配置
 
         Returns:
@@ -242,29 +235,10 @@ class GridBot:
 
     def _handle_grid_shift(self):
         logger.warning(f"価格 {self.current_price:.2f} がグリッド範囲外。動的シフトを実行します。")
-        filled_positions = [
-            (g.buy_price, g.buy_order_id, g.filled_quantity)
-            for g in self.strategy.grids
-            if g.position_filled
-        ]
 
         self.order_manager.cancel_all_orders()
         self.strategy.shift_grids()
-        self.risk_manager.stop_loss_price = self.strategy.lower_price * (
-            1 - Settings.STOP_LOSS_PERCENTAGE / 100
-        )
-
-        claimed: set[int] = set()
-        for buy_price, buy_order_id, qty in filled_positions:
-            available = [g for g in self.strategy.grids if g.level not in claimed]
-            if not available:
-                logger.warning("グリッドシフト: 空きグリッド不足、一部ポジションの復元をスキップ")
-                break
-            best = min(available, key=lambda g: abs(g.buy_price - buy_price))
-            best.position_filled = True
-            best.buy_order_id = buy_order_id
-            best.filled_quantity = qty
-            claimed.add(best.level)
+        self.risk_manager.update_stop_loss_price(self.strategy.lower_price)
 
         self._place_initial_orders()
 
@@ -285,12 +259,18 @@ class GridBot:
         from src.bot_display import display_status
 
         stats = self.portfolio.refresh_stats()
+        logger.info(
+            f"価格={self.current_price:.2f} "
+            f"ポジション={sum(1 for g in self.strategy.grids if g.position_filled)} "
+            f"利益={stats.total_profit:+.2f}"
+        )
         display_status(
             self.symbol,
             self.current_price,
             self.strategy.grid_status,
             stats,
             self.risk_manager.risk_status,
+            quote_asset=self.portfolio.quote_asset,
         )
 
     def _export_on_stop(self):
@@ -312,7 +292,6 @@ class GridBot:
         close_open_positions(self.client, self.strategy, self.portfolio)
 
     def stop(self):
-        from config.settings import Settings
         from src.bot_shutdown import stop_bot
 
         self.is_running = False

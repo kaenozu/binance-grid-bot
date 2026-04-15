@@ -1,9 +1,4 @@
-"""
-ファイルパス: tests/test_settings.py
-概要: 設定管理のテスト
-説明: バリデーション、_safe_float、デフォルト値を検証
-関連ファイル: config/settings.py, tests/conftest.py
-"""
+"""設定管理のテスト"""
 
 from config.settings import Settings, _safe_float
 

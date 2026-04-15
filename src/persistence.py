@@ -1,16 +1,10 @@
-"""
-ファイルパス: src/persistence.py
-概要: 状態永続化（SQLite）
-説明: トレード履歴とグリッド状態をSQLiteに保存・復元
-関連ファイル: src/portfolio.py, src/grid_strategy.py, src/bot.py
-"""
+"""状態永続化（SQLite）"""
 
 import json
 import sqlite3
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 from utils.logger import setup_logger
 
@@ -21,13 +15,21 @@ _db_initialized = False
 _db_lock = threading.Lock()
 
 
+def set_db_path(path: Path | str):
+    """DBパスを変更する（テスト用途。_db_initialized もリセット）"""
+    global DB_PATH, _db_initialized
+    with _db_lock:
+        DB_PATH = Path(path)
+        _db_initialized = False
+
+
 def _ensure_db():
     global _db_initialized
     with _db_lock:
         if _db_initialized:
             return
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        conn = sqlite3.connect(str(DB_PATH))
+        conn = sqlite3.connect(str(DB_PATH), timeout=30)
         try:
             conn.row_factory = sqlite3.Row
             conn.execute("""
@@ -84,7 +86,7 @@ def _ensure_db():
 
 def _get_connection():
     _ensure_db()
-    return sqlite3.connect(str(DB_PATH))
+    return sqlite3.connect(str(DB_PATH), timeout=30)
 
 
 def save_trade(
@@ -178,7 +180,7 @@ def save_portfolio_stats(stats):
         conn.close()
 
 
-def load_grid_states(symbol: str) -> Optional[list[dict]]:
+def load_grid_states(symbol: str) -> list[dict] | None:
     if not DB_PATH.exists():
         return None
     conn = _get_connection()
@@ -207,7 +209,7 @@ def load_grid_states(symbol: str) -> Optional[list[dict]]:
         conn.close()
 
 
-def load_portfolio_stats() -> Optional[dict]:
+def load_portfolio_stats() -> dict | None:
     if not DB_PATH.exists():
         return None
     conn = _get_connection()

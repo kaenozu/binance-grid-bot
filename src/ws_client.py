@@ -1,14 +1,9 @@
-"""
-ファイルパス: src/ws_client.py
-概要: Binance WebSocket クライアント
-説明: リアルタイム価格・注文更新をWebSocketで受信。スレッドセーフ、単一ループ再接続。
-関連ファイル: src/binance_client.py, src/bot.py, src/order_manager.py
-"""
+"""Binance WebSocket クライアント"""
 
 import json
 import threading
 import time
-from typing import Callable, Optional
+from typing import Callable
 
 from utils.logger import setup_logger
 
@@ -22,17 +17,17 @@ class BinanceWebSocketClient:
 
     def __init__(self):
         self._running = False
-        self._thread: Optional[threading.Thread] = None
-        self._on_price: Optional[Callable[[float], None]] = None
-        self._on_order_update: Optional[Callable[[dict], None]] = None
+        self._thread: threading.Thread | None = None
+        self._on_price: Callable[[float], None] | None = None
+        self._on_order_update: Callable[[dict], None] | None = None
         self._ws = None
-        self._current_price: Optional[float] = None
+        self._current_price: float | None = None
         self._price_lock = threading.Lock()
-        self._symbol: Optional[str] = None
+        self._symbol: str | None = None
         self._reconnect_delay = 1
 
     @property
-    def current_price(self) -> Optional[float]:
+    def current_price(self) -> float | None:
         with self._price_lock:
             return self._current_price
 
@@ -51,12 +46,14 @@ class BinanceWebSocketClient:
             url = f"{self.STREAM_BASE_URL}/{symbol.lower()}@miniTicker"
             while self._running:
                 try:
-                    ws = websocket.WebSocketApp()
-                    ws.on_message = self._on_ticker_message
-                    ws.on_error = self._on_error
-                    ws.on_close = lambda ws_app, code, msg: None
+                    ws = websocket.WebSocketApp(
+                        url,
+                        on_message=self._on_ticker_message,
+                        on_error=self._on_error,
+                        on_close=lambda ws_app, close_code, msg: None,
+                    )
                     self._ws = ws
-                    ws.run_forever(url, ping_interval=20, ping_timeout=10)
+                    ws.run_forever(ping_interval=20, ping_timeout=10)
                     self._reconnect_delay = 1
                 except Exception as e:
                     logger.error(f"WebSocket エラー: {e}")

@@ -1,11 +1,7 @@
-"""
-ファイルパス: utils/logger.py
-概要: ロギング設定
-説明: コンソールとファイルにログを出力する設定を提供
-関連ファイル: src/bot.py, main.py
-"""
+"""ロギング設定"""
 
 import logging
+import os
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -42,7 +38,7 @@ def setup_logger(name: str = "grid_bot") -> logging.Logger:
     logger.addHandler(console_handler)
 
     # pytest 実行中はファイル出力しない（実運用ログとテスト出力を分離）
-    in_pytest = "pytest" in sys.modules or any("pytest" in str(a) for a in sys.argv)
+    in_pytest = os.environ.get("PYTEST_CURRENT_TEST") is not None
     if not in_pytest:
         log_dir = Path(__file__).parent.parent / "logs"
         log_dir.mkdir(exist_ok=True)

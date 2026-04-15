@@ -1,9 +1,4 @@
-"""
-ファイルパス: tests/test_api_weight.py
-概要: APIWeightTracker のテスト
-説明: ウェイト追跡、待機判定、ウィンドウリセット、スレッドセーフティを検証
-関連ファイル: src/api_weight.py
-"""
+"""APIWeightTracker のテスト"""
 
 import threading
 import time

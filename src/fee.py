@@ -1,9 +1,4 @@
-"""
-ファイルパス: src/fee.py
-概要: 手数料計算ユーティリティ
-説明: 買い/売りの手数料を差し引いた純利益を計算
-関連ファイル: src/portfolio.py, src/backtest.py
-"""
+"""手数料計算"""
 
 
 def calculate_net_profit(

@@ -1,15 +1,13 @@
-"""
-ファイルパス: tests/test_backtest.py
-概要: バックテストエンジンのテスト
-説明: バックテストの実行、損切り、利益計算を検証
-関連ファイル: src/backtest.py, tests/conftest.py
-"""
+"""バックテストエンジンのテスト"""
 
 from datetime import datetime
 
 import pytest
 
 from src.backtest import BacktestEngine
+from tests.conftest import BASE_PRICE, LOWER_PRICE, UPPER_PRICE
+
+SPACING = (UPPER_PRICE - LOWER_PRICE) / 10  # 2220.0
 
 
 class TestBacktestEngine:
@@ -20,28 +18,28 @@ class TestBacktestEngine:
         return [
             {
                 "open_time": datetime(2026, 1, 1, 0, 0),
-                "open": 50000.0,
-                "high": 50500.0,
-                "low": 49500.0,
-                "close": 50000.0,
+                "open": BASE_PRICE,
+                "high": BASE_PRICE + 500,
+                "low": BASE_PRICE - 500,
+                "close": BASE_PRICE,
                 "volume": 100.0,
                 "close_time": datetime(2026, 1, 1, 1, 0),
             },
             {
                 "open_time": datetime(2026, 1, 1, 1, 0),
-                "open": 50000.0,
-                "high": 51000.0,
-                "low": 49000.0,
-                "close": 50500.0,
+                "open": BASE_PRICE,
+                "high": BASE_PRICE + 1000,
+                "low": BASE_PRICE - 1000,
+                "close": BASE_PRICE + 500,
                 "volume": 120.0,
                 "close_time": datetime(2026, 1, 1, 2, 0),
             },
             {
                 "open_time": datetime(2026, 1, 1, 2, 0),
-                "open": 50500.0,
-                "high": 51500.0,
-                "low": 50000.0,
-                "close": 51000.0,
+                "open": BASE_PRICE + 500,
+                "high": BASE_PRICE + 1500,
+                "low": BASE_PRICE,
+                "close": BASE_PRICE + 1000,
                 "volume": 110.0,
                 "close_time": datetime(2026, 1, 1, 3, 0),
             },
@@ -53,8 +51,8 @@ class TestBacktestEngine:
             symbol="BTCUSDT",
             investment_amount=1000.0,
             grid_count=10,
-            lower_price=45000.0,
-            upper_price=55000.0,
+            lower_price=LOWER_PRICE,
+            upper_price=UPPER_PRICE,
             stop_loss_percent=15.0,
         )
 
@@ -62,7 +60,7 @@ class TestBacktestEngine:
         report = engine.run(sample_klines)
         assert report["symbol"] == "BTCUSDT"
         assert report["kline_count"] == 3
-        assert report["start_price"] == 50000.0
+        assert report["start_price"] == BASE_PRICE
         assert "roi_percent" in report
         assert "total_trades" in report
 
@@ -75,27 +73,27 @@ class TestBacktestEngine:
             symbol="BTCUSDT",
             investment_amount=1000.0,
             grid_count=10,
-            lower_price=45000.0,
-            upper_price=55000.0,
+            lower_price=LOWER_PRICE,
+            upper_price=UPPER_PRICE,
             stop_loss_percent=5.0,
         )
-        # 損切り価格: 45000 * 0.95 = 42750
+        # 損切り価格: 62900 * 0.95 = 59755
         klines = [
             {
                 "open_time": datetime(2026, 1, 1, 0, 0),
-                "open": 50000.0,
-                "high": 50000.0,
-                "low": 50000.0,
-                "close": 50000.0,
+                "open": BASE_PRICE,
+                "high": BASE_PRICE,
+                "low": BASE_PRICE,
+                "close": BASE_PRICE,
                 "volume": 100.0,
                 "close_time": datetime(2026, 1, 1, 1, 0),
             },
             {
                 "open_time": datetime(2026, 1, 1, 1, 0),
-                "open": 43000.0,
-                "high": 43000.0,
-                "low": 42000.0,
-                "close": 42000.0,
+                "open": 59000.0,
+                "high": 59000.0,
+                "low": 58000.0,
+                "close": 58000.0,
                 "volume": 100.0,
                 "close_time": datetime(2026, 1, 1, 2, 0),
             },
@@ -107,10 +105,10 @@ class TestBacktestEngine:
         no_trade_klines = [
             {
                 "open_time": datetime(2026, 1, 1, 0, 0),
-                "open": 80000.0,
-                "high": 80000.0,
-                "low": 80000.0,
-                "close": 80000.0,
+                "open": 90000.0,
+                "high": 90000.0,
+                "low": 90000.0,
+                "close": 90000.0,
                 "volume": 100.0,
                 "close_time": datetime(2026, 1, 1, 1, 0),
             },
@@ -121,42 +119,43 @@ class TestBacktestEngine:
     def test_report_has_grid_range(self, engine, sample_klines):
         report = engine.run(sample_klines)
         assert "grid_range" in report
-        assert "45000" in report["grid_range"]
+        assert "62900" in report["grid_range"]
 
     def test_multiple_grid_fills(self):
+        # グリッド幅を狭くして約定を起こしやすくする
         engine = BacktestEngine(
             symbol="BTCUSDT",
             investment_amount=10000.0,
             grid_count=5,
-            lower_price=48000.0,
-            upper_price=52000.0,
+            lower_price=BASE_PRICE - 1000,
+            upper_price=BASE_PRICE + 1000,
             stop_loss_percent=15.0,
         )
         klines = [
             {
                 "open_time": datetime(2026, 1, 1, 0, 0),
-                "open": 50000.0,
-                "high": 50000.0,
-                "low": 50000.0,
-                "close": 50000.0,
+                "open": BASE_PRICE,
+                "high": BASE_PRICE,
+                "low": BASE_PRICE,
+                "close": BASE_PRICE,
                 "volume": 100.0,
                 "close_time": datetime(2026, 1, 1, 1, 0),
             },
             {
                 "open_time": datetime(2026, 1, 1, 1, 0),
-                "open": 50000.0,
-                "high": 50400.0,
-                "low": 48500.0,
-                "close": 49500.0,
+                "open": BASE_PRICE,
+                "high": BASE_PRICE + 400,
+                "low": BASE_PRICE - 800,
+                "close": BASE_PRICE - 500,
                 "volume": 200.0,
                 "close_time": datetime(2026, 1, 1, 2, 0),
             },
             {
                 "open_time": datetime(2026, 1, 1, 2, 0),
-                "open": 49500.0,
-                "high": 50800.0,
-                "low": 49200.0,
-                "close": 50200.0,
+                "open": BASE_PRICE - 500,
+                "high": BASE_PRICE + 800,
+                "low": BASE_PRICE - 600,
+                "close": BASE_PRICE + 200,
                 "volume": 200.0,
                 "close_time": datetime(2026, 1, 1, 3, 0),
             },
@@ -170,35 +169,35 @@ class TestBacktestEngine:
             symbol="BTCUSDT",
             investment_amount=1000.0,
             grid_count=5,
-            lower_price=45000.0,
-            upper_price=55000.0,
+            lower_price=LOWER_PRICE,
+            upper_price=UPPER_PRICE,
             stop_loss_percent=15.0,
         )
         klines = [
             {
                 "open_time": datetime(2026, 1, 1, 0, 0),
-                "open": 50000.0,
-                "high": 51000.0,
-                "low": 50000.0,
-                "close": 50500.0,
+                "open": BASE_PRICE,
+                "high": BASE_PRICE + 1000,
+                "low": BASE_PRICE,
+                "close": BASE_PRICE + 500,
                 "volume": 100.0,
                 "close_time": datetime(2026, 1, 1, 1, 0),
             },
             {
                 "open_time": datetime(2026, 1, 1, 1, 0),
-                "open": 50500.0,
-                "high": 50500.0,
-                "low": 46000.0,
-                "close": 46500.0,
+                "open": BASE_PRICE + 500,
+                "high": BASE_PRICE + 500,
+                "low": LOWER_PRICE + 1000,
+                "close": LOWER_PRICE + 2000,
                 "volume": 150.0,
                 "close_time": datetime(2026, 1, 1, 2, 0),
             },
             {
                 "open_time": datetime(2026, 1, 1, 2, 0),
-                "open": 46500.0,
-                "high": 47500.0,
-                "low": 46000.0,
-                "close": 47000.0,
+                "open": LOWER_PRICE + 2000,
+                "high": LOWER_PRICE + 3000,
+                "low": LOWER_PRICE + 1000,
+                "close": LOWER_PRICE + 2500,
                 "volume": 120.0,
                 "close_time": datetime(2026, 1, 1, 3, 0),
             },
@@ -207,12 +206,14 @@ class TestBacktestEngine:
         assert report["max_drawdown_percent"] >= 0
 
     def test_fee_deduction_reduces_profit(self):
+        lower = BASE_PRICE - 500
+        upper = BASE_PRICE + 500
         no_fee = BacktestEngine(
             symbol="BTCUSDT",
             investment_amount=10000.0,
             grid_count=5,
-            lower_price=49000.0,
-            upper_price=51000.0,
+            lower_price=lower,
+            upper_price=upper,
             stop_loss_percent=15.0,
             fee_rate=0.0,
         )
@@ -220,36 +221,36 @@ class TestBacktestEngine:
             symbol="BTCUSDT",
             investment_amount=10000.0,
             grid_count=5,
-            lower_price=49000.0,
-            upper_price=51000.0,
+            lower_price=lower,
+            upper_price=upper,
             stop_loss_percent=15.0,
             fee_rate=0.001,
         )
         klines = [
             {
                 "open_time": datetime(2026, 1, 1, 0, 0),
-                "open": 50000.0,
-                "high": 50000.0,
-                "low": 50000.0,
-                "close": 50000.0,
+                "open": BASE_PRICE,
+                "high": BASE_PRICE,
+                "low": BASE_PRICE,
+                "close": BASE_PRICE,
                 "volume": 100.0,
                 "close_time": datetime(2026, 1, 1, 1, 0),
             },
             {
                 "open_time": datetime(2026, 1, 1, 1, 0),
-                "open": 50000.0,
-                "high": 50400.0,
-                "low": 49200.0,
-                "close": 49800.0,
+                "open": BASE_PRICE,
+                "high": BASE_PRICE + 400,
+                "low": BASE_PRICE - 800,
+                "close": BASE_PRICE - 200,
                 "volume": 200.0,
                 "close_time": datetime(2026, 1, 1, 2, 0),
             },
             {
                 "open_time": datetime(2026, 1, 1, 2, 0),
-                "open": 49800.0,
-                "high": 50500.0,
-                "low": 49500.0,
-                "close": 50200.0,
+                "open": BASE_PRICE - 200,
+                "high": BASE_PRICE + 500,
+                "low": BASE_PRICE - 300,
+                "close": BASE_PRICE + 200,
                 "volume": 200.0,
                 "close_time": datetime(2026, 1, 1, 3, 0),
             },

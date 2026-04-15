@@ -1,9 +1,4 @@
-"""
-ファイルパス: backtest_main.py
-概要: バックテスト実行スクリプト
-説明: 過去の価格データを取得し、グリッド戦略のシミュレーションを実行
-関連ファイル: src/backtest.py, config/settings.py
-"""
+"""バックテスト実行スクリプト"""
 
 import argparse
 import json
@@ -101,18 +96,10 @@ def main():
     # バックテスト実行
     print("バックテスト実行中...")
 
-    # グリッド範囲の自動設定（開始価格の±GRID_RANGE_FACTOR）
-    start_price = klines[0]["close"]
-    range_factor = Settings.GRID_RANGE_FACTOR
-    lower_price = start_price * (1 - range_factor)
-    upper_price = start_price * (1 + range_factor)
-
     engine = BacktestEngine(
         symbol=symbol,
         investment_amount=investment,
         grid_count=grid_count,
-        lower_price=lower_price,
-        upper_price=upper_price,
         stop_loss_percent=stop_loss_percent,
     )
 
