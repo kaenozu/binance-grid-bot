@@ -3,6 +3,8 @@
 import threading
 import time
 
+import pytest
+
 from src.api_weight import APIWeightTracker
 
 
@@ -22,7 +24,9 @@ class TestAPIWeightTracker:
         tracker.update_weight(1001)
         assert tracker.should_wait() is True
 
+    @pytest.mark.slow
     def test_window_reset(self):
+        """window_seconds=1 秒のresetをテスト。sleep必要。"""
         tracker = APIWeightTracker(max_weight=1200, weight_buffer=200, window_seconds=1)
         tracker.update_weight(1000)
         assert tracker.available_weight == 0

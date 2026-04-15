@@ -51,7 +51,7 @@ class TestMultiBot:
             with patch("src.multi_bot.BinanceWebSocketClient"):
                 t = threading.Thread(target=mb.start_all, daemon=True)
                 t.start()
-                time.sleep(0.5)
+                time.sleep(0.1)
                 mb.stop_all(timeout=5)
                 t.join(timeout=5)
 
@@ -70,7 +70,7 @@ class TestMultiBot:
             with patch("src.multi_bot.BinanceWebSocketClient"):
                 t = threading.Thread(target=mb.start_all, daemon=True)
                 t.start()
-                time.sleep(1)
+                time.sleep(0.3)
                 mb.stop_all(timeout=5)
                 t.join(timeout=5)
 
@@ -108,7 +108,7 @@ class TestMultiBot:
             with patch("src.multi_bot.BinanceWebSocketClient"):
                 t = threading.Thread(target=mb.start_all, daemon=True)
                 t.start()
-                time.sleep(0.5)
+                time.sleep(0.1)
 
                 start = time.time()
                 mb.stop_all(timeout=2)
@@ -130,7 +130,7 @@ class TestMultiBot:
             with patch("src.multi_bot.BinanceWebSocketClient"):
                 t = threading.Thread(target=mb.start_all, daemon=True)
                 t.start()
-                time.sleep(0.5)
+                time.sleep(0.1)
 
                 status = mb.get_status()
                 assert status["symbols"]["BTCUSDT"]["running"] is True

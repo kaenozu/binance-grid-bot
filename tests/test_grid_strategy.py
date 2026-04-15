@@ -1,5 +1,6 @@
 """グリッド取引戦略のテスト"""
 
+from config.settings import Settings
 from src.grid_strategy import GridStrategy
 from tests.conftest import BASE_PRICE, LOWER_PRICE, UPPER_PRICE
 
@@ -82,6 +83,7 @@ class TestGridStrategy:
         assert grid_strategy.current_price == BASE_PRICE + 1000
 
     def test_auto_range_is_15_percent(self):
+        Settings.GRID_RANGE_FACTOR = 0.15
         strategy = GridStrategy(
             symbol="BTCUSDT",
             current_price=100000.0,

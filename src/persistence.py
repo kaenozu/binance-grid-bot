@@ -261,15 +261,13 @@ def load_portfolio_stats() -> dict | None:
 
 def update_trade_matched(order_id: int, matched: bool):
     """指定order_idのトレードのmatchedフラグを更新"""
-    conn = _get_connection()
-    try:
-        conn.execute(
-            "UPDATE trades SET matched = ? WHERE order_id = ?",
-            (int(matched), order_id),
-        )
-        conn.commit()
-    finally:
-        conn.close()
+    with _db_lock:
+        conn = _get_connection()
+        with conn:
+            conn.execute(
+                "UPDATE trades SET matched = ? WHERE order_id = ?",
+                (int(matched), order_id),
+            )
 
 
 def load_trades() -> list[dict]:
