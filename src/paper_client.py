@@ -1,11 +1,4 @@
-"""
-ファイルパス: src/paper_client.py
-概要: ペーパートレード用APIクライアント
-説明: 実際の注文を出さずにシミュレーションのみ行う
-関連ファイル: src/binance_client.py, src/bot.py
-"""
-
-from typing import Optional
+"""ペーパートレード用クライアント"""
 
 import requests as requests_lib
 
@@ -34,6 +27,8 @@ class PaperClient:
         self.close()
         return False
 
+    # ── 公開 API ─────────────────────────────────────────────────────
+
     def get_account_balance(self) -> dict:
         return dict(self._balances)
 
@@ -46,7 +41,7 @@ class PaperClient:
         response.raise_for_status()
         return float(response.json()["price"])
 
-    def get_symbol_info(self, symbol: str) -> Optional[dict]:
+    def get_symbol_info(self, symbol: str) -> dict | None:
         return {
             "symbol": symbol,
             "status": "TRADING",
@@ -62,64 +57,23 @@ class PaperClient:
         }
 
     def place_order(
-        self, symbol: str, side: str, quantity: float, price: Optional[float] = None
+        self, symbol: str, side: str, quantity: float, price: float | None = None
     ) -> dict:
         self._order_counter += 1
-        order_id = self._order_counter
-
         base = symbol.replace("USDT", "") if "USDT" in symbol else "BTC"
         quote = "USDT"
 
         if price is None:
-            # Market order: fill immediately
-            market_price = self.get_symbol_price(symbol)
-            fill_price = market_price
-            status = "FILLED"
+            # 成行注文: 即時約定
+            fill_price = self.get_symbol_price(symbol)
+            order = self._build_order(
+                self._order_counter, symbol, side, fill_price, quantity, "FILLED"
+            )
+            self._settle_order(order, base, quote, fill_price)
         else:
-            # Limit order: check balance at placement time
-            fill_price = price
-            status = "NEW"
-            if side == "BUY":
-                cost = fill_price * quantity
-                avail = self._balances.get(quote, {}).get("free", 0)
-                if quote in self._balances and self._balances[quote]["free"] < cost:
-                    raise BinanceAPIError(
-                        f"残高不足: {quote} needed={cost:.2f}, available={avail:.2f}"
-                    )
-            elif side == "SELL":
-                avail = self._balances.get(base, {}).get("free", 0)
-                if base in self._balances and self._balances[base]["free"] < quantity:
-                    raise BinanceAPIError(
-                        f"残高不足: {base} needed={quantity:.8f}, available={avail:.8f}"
-                    )
-
-        order = {
-            "orderId": order_id,
-            "symbol": symbol,
-            "side": side,
-            "type": "LIMIT" if price else "MARKET",
-            "price": f"{fill_price:.8f}",
-            "origQty": f"{quantity:.8f}",
-            "executedQty": f"{quantity:.8f}" if status == "FILLED" else "0",
-            "status": status,
-            "avgPrice": f"{fill_price:.8f}" if status == "FILLED" else "0",
-        }
-
-        if status == "FILLED":
-            if side == "BUY":
-                cost = fill_price * quantity
-                if quote in self._balances and self._balances[quote]["free"] >= cost:
-                    self._balances[quote]["free"] -= cost
-                    if base in self._balances:
-                        self._balances[base]["free"] += quantity
-                order["executedQty"] = f"{quantity:.8f}"
-            elif side == "SELL":
-                if base in self._balances and self._balances[base]["free"] >= quantity:
-                    self._balances[base]["free"] -= quantity
-                    proceeds = fill_price * quantity
-                    if quote in self._balances:
-                        self._balances[quote]["free"] += proceeds
-                order["executedQty"] = f"{quantity:.8f}"
+            # 指値注文: 残高チェック
+            self._check_balance(side, base, quote, price, quantity)
+            order = self._build_order(self._order_counter, symbol, side, price, quantity, "NEW")
 
         self._orders.append(order)
         return order
@@ -131,42 +85,90 @@ class PaperClient:
                 return {"orderId": order_id, "status": "CANCELED"}
         return {"orderId": order_id, "status": "CANCELED"}
 
-    def get_open_orders(self, symbol: Optional[str] = None) -> list[dict]:
+    def get_open_orders(self, symbol: str | None = None) -> list[dict]:
         orders = [o for o in self._orders if o["status"] == "NEW"]
         if symbol is not None:
             orders = [o for o in orders if o["symbol"] == symbol]
         return orders
 
     def get_order(self, symbol: str, order_id: int) -> dict:
+        """注文情報を取得。NEW（指値）注文は現在価格と比較して自動フィルする。
+
+        WARNING: フィル時に残高を更新する副作用がある。ペーパートレード専用。
+        """
         for o in self._orders:
-            if o["orderId"] == order_id:
-                if o["status"] == "NEW" and o["price"] != "0":
-                    try:
-                        current = self.get_symbol_price(symbol)
-                        limit_price = float(o["price"])
-                        filled = (o["side"] == "BUY" and current <= limit_price) or (
-                            o["side"] == "SELL" and current >= limit_price
-                        )
-                        if filled:
-                            qty = float(o["origQty"])
-                            o["status"] = "FILLED"
-                            o["avgPrice"] = o["price"]
-                            o["executedQty"] = o["origQty"]
-                            base = symbol.replace("USDT", "") if "USDT" in symbol else "BTC"
-                            quote = "USDT"
-                            if o["side"] == "BUY":
-                                cost = limit_price * qty
-                                if quote in self._balances:
-                                    self._balances[quote]["free"] -= cost
-                                if base in self._balances:
-                                    self._balances[base]["free"] += qty
-                            elif o["side"] == "SELL":
-                                if base in self._balances:
-                                    self._balances[base]["free"] -= qty
-                                proceeds = limit_price * qty
-                                if quote in self._balances:
-                                    self._balances[quote]["free"] += proceeds
-                    except Exception:
-                        pass
-                return o
+            if o["orderId"] != order_id:
+                continue
+            self._try_auto_fill(o, symbol)
+            return o
         raise BinanceAPIError(f"注文が見つかりません: {order_id}")
+
+    # ── プライベートヘルパー ─────────────────────────────────────────
+
+    def _build_order(
+        self, order_id: int, symbol: str, side: str,
+        price: float, quantity: float, status: str,
+    ) -> dict:
+        qty_str = f"{quantity:.8f}"
+        return {
+            "orderId": order_id,
+            "symbol": symbol,
+            "side": side,
+            "type": "LIMIT" if status == "NEW" else "MARKET",
+            "price": f"{price:.8f}",
+            "origQty": qty_str,
+            "executedQty": qty_str if status == "FILLED" else "0",
+            "status": status,
+            "avgPrice": f"{price:.8f}" if status == "FILLED" else "0",
+        }
+
+    def _check_balance(self, side: str, base: str, quote: str, price: float, quantity: float):
+        """残高不足なら BinanceAPIError を送出"""
+        if side == "BUY":
+            cost = price * quantity
+            avail = self._balances.get(quote, {}).get("free", 0)
+            if quote in self._balances and avail < cost:
+                raise BinanceAPIError(f"残高不足: {quote} needed={cost:.2f}, available={avail:.2f}")
+        elif side == "SELL":
+            avail = self._balances.get(base, {}).get("free", 0)
+            if base in self._balances and avail < quantity:
+                raise BinanceAPIError(
+                    f"残高不足: {base} needed={quantity:.8f}, available={avail:.8f}"
+                )
+
+    def _settle_order(self, order: dict, base: str, quote: str, price: float):
+        """注文を約定状態にし、残高を更新"""
+        qty = float(order["origQty"])
+        if order["side"] == "BUY":
+            cost = price * qty
+            if quote in self._balances and self._balances[quote]["free"] >= cost:
+                self._balances[quote]["free"] -= cost
+            if base in self._balances:
+                self._balances[base]["free"] += qty
+        elif order["side"] == "SELL":
+            if base in self._balances and self._balances[base]["free"] >= qty:
+                self._balances[base]["free"] -= qty
+            proceeds = price * qty
+            if quote in self._balances:
+                self._balances[quote]["free"] += proceeds
+        order["executedQty"] = f"{qty:.8f}"
+
+    def _try_auto_fill(self, order: dict, symbol: str):
+        """NEW 指値注文を現在価格で評価し、条件を満たせば約定させる"""
+        if order["status"] != "NEW" or order["price"] == "0":
+            return
+        try:
+            current = self.get_symbol_price(symbol)
+            limit_price = float(order["price"])
+            is_buy = current <= limit_price
+            is_sell = current >= limit_price
+            if not ((order["side"] == "BUY" and is_buy) or (order["side"] == "SELL" and is_sell)):
+                return
+            base = symbol.replace("USDT", "") if "USDT" in symbol else "BTC"
+            quote = "USDT"
+            order["status"] = "FILLED"
+            order["avgPrice"] = order["price"]
+            order["executedQty"] = order["origQty"]
+            self._settle_order(order, base, quote, limit_price)
+        except Exception:
+            pass

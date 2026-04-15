@@ -13,3 +13,9 @@ backtest_*.json
 venv/
 .venv/
 env/
+tests/
+requirements-dev.txt
+docs/
+*.md
+.github/
+data/

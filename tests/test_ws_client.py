@@ -1,9 +1,4 @@
-"""
-ファイルパス: tests/test_ws_client.py
-概要: WebSocket クライアントのテスト
-説明: スタート/ストップ、価格更新、再接続、コールバック、クローズ、スレッドセーフティを検証
-関連ファイル: src/ws_client.py
-"""
+"""WebSocket クライアントのテスト"""
 
 import json
 import threading
@@ -11,6 +6,7 @@ import time
 from unittest.mock import MagicMock
 
 from src.ws_client import BinanceWebSocketClient
+from tests.conftest import BASE_PRICE
 
 
 class TestBinanceWebSocketClient:
@@ -27,17 +23,17 @@ class TestBinanceWebSocketClient:
 
     def test_on_ticker_message_updates_price(self):
         ws = BinanceWebSocketClient()
-        message = json.dumps({"c": "50000.50", "s": "BTCUSDT"})
+        message = json.dumps({"c": "74000.50", "s": "BTCUSDT"})
         ws._on_ticker_message(None, message)
-        assert ws.current_price == 50000.50
+        assert ws.current_price == 74000.50
 
     def test_on_ticker_message_calls_callback(self):
         ws = BinanceWebSocketClient()
         cb = MagicMock()
         ws.set_on_price(cb)
-        message = json.dumps({"c": "50000.50"})
+        message = json.dumps({"c": "74000.50"})
         ws._on_ticker_message(None, message)
-        cb.assert_called_once_with(50000.50)
+        cb.assert_called_once_with(74000.50)
 
     def test_stop_sets_running_false(self):
         ws = BinanceWebSocketClient()
@@ -54,7 +50,9 @@ class TestBinanceWebSocketClient:
         def writer():
             try:
                 for i in range(100):
-                    ws._on_ticker_message(None, json.dumps({"c": str(50000.0 + i)}))
+                    ws._on_ticker_message(
+                        None, json.dumps({"c": str(BASE_PRICE + i)})
+                    )
                     time.sleep(0.001)
             except Exception as e:
                 errors.append(e)

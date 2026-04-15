@@ -1,9 +1,4 @@
-"""
-ファイルパス: tests/test_portfolio.py
-概要: 資産管理・PnL計算のテスト
-説明: 取引記録、損益計算、勝率計算を検証
-関連ファイル: src/portfolio.py, tests/conftest.py
-"""
+"""資産管理・PnL計算のテスト"""
 
 import pytest
 

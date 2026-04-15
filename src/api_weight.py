@@ -1,9 +1,4 @@
-"""
-ファイルパス: src/api_weight.py
-概要: Binance API ウェイト管理
-説明: リクエストウェイトを追跡し、レートリミットを予防。スレッドセーフ。
-関連ファイル: src/binance_client.py, src/multi_bot.py
-"""
+"""API ウェイト管理"""
 
 import threading
 import time

@@ -1,9 +1,4 @@
-"""
-ファイルパス: tests/test_order_manager.py
-概要: 注文管理のテスト
-説明: 注文配置、約定チェック、キャンセル、クリーンアップを検証
-関連ファイル: src/order_manager.py, tests/conftest.py
-"""
+"""注文管理のテスト"""
 
 from unittest.mock import MagicMock
 
@@ -11,6 +6,9 @@ import pytest
 
 from src.grid_strategy import GridStrategy
 from src.order_manager import OrderManager
+from tests.conftest import BASE_PRICE, LOWER_PRICE, UPPER_PRICE
+
+SPACING = (UPPER_PRICE - LOWER_PRICE) / 10  # 2220.0
 
 
 class TestOrderManager:
@@ -20,9 +18,9 @@ class TestOrderManager:
     def strategy(self):
         return GridStrategy(
             symbol="BTCUSDT",
-            current_price=50000.0,
-            lower_price=45000.0,
-            upper_price=55000.0,
+            current_price=BASE_PRICE,
+            lower_price=LOWER_PRICE,
+            upper_price=UPPER_PRICE,
             grid_count=10,
             investment_amount=1000.0,
         )
@@ -39,7 +37,7 @@ class TestOrderManager:
         }
         client.place_order.return_value = {
             "orderId": 99999,
-            "price": "50000.00",
+            "price": str(BASE_PRICE),
             "origQty": "0.002",
             "status": "NEW",
         }
@@ -55,7 +53,7 @@ class TestOrderManager:
             order_id=100,
             grid_level=3,
             side="BUY",
-            price=47000.0,
+            price=LOWER_PRICE + SPACING * 2,
             quantity=0.002,
             status="NEW",
         )
@@ -63,11 +61,11 @@ class TestOrderManager:
         assert order_manager.active_orders[100].grid_level == 3
 
     def test_check_order_fills_auto_cleanup(self, order_manager, mock_client):
-        order_manager.register_order(100, 0, "BUY", 45000.0, 0.002, "NEW")
+        order_manager.register_order(100, 0, "BUY", LOWER_PRICE, 0.002, "NEW")
 
         mock_client.get_order.return_value = {
             "status": "FILLED",
-            "price": "45000.00",
+            "price": str(LOWER_PRICE),
             "executedQty": "0.002",
         }
 
@@ -86,8 +84,10 @@ class TestOrderManager:
         assert mock_client.cancel_order.call_count == 2
 
     def test_get_active_order_count(self, order_manager):
-        order_manager.register_order(100, 0, "BUY", 45000.0, 0.002, "NEW")
-        order_manager.register_order(101, 1, "BUY", 46000.0, 0.002, "FILLED")
+        order_manager.register_order(100, 0, "BUY", LOWER_PRICE, 0.002, "NEW")
+        order_manager.register_order(
+            101, 1, "BUY", LOWER_PRICE + SPACING, 0.002, "FILLED"
+        )
         assert order_manager.get_active_order_count() == 1
 
     def test_place_grid_orders(self, order_manager, mock_client):

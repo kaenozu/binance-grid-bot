@@ -1,13 +1,7 @@
-"""
-ファイルパス: src/grid_strategy.py
-概要: グリッド取引戦略
-説明: 価格帯を分割し、買い注文と売り注文を配置するグリッド取引ロジックを提供
-関連ファイル: src/binance_client.py, src/order_manager.py, config/settings.py
-"""
+"""グリッド取引戦略"""
 
 import math
 from dataclasses import dataclass
-from typing import Optional
 
 from config.settings import Settings
 from utils.logger import setup_logger
@@ -21,11 +15,11 @@ class GridLevel:
 
     level: int
     buy_price: float
-    sell_price: Optional[float]
-    buy_order_id: Optional[int] = None
-    sell_order_id: Optional[int] = None
+    sell_price: float | None
+    buy_order_id: int | None = None
+    sell_order_id: int | None = None
     position_filled: bool = False
-    filled_quantity: Optional[float] = None
+    filled_quantity: float | None = None
 
 
 class GridStrategy:
@@ -35,20 +29,11 @@ class GridStrategy:
         self,
         symbol: str,
         current_price: float,
-        lower_price: Optional[float] = None,
-        upper_price: Optional[float] = None,
-        grid_count: Optional[int] = None,
-        investment_amount: Optional[float] = None,
+        lower_price: float | None = None,
+        upper_price: float | None = None,
+        grid_count: int | None = None,
+        investment_amount: float | None = None,
     ):
-        """
-        Args:
-            symbol: 取引ペア
-            current_price: 現在価格
-            lower_price: グリッド下限価格（None の場合自動計算）
-            upper_price: グリッド上限価格（None の場合自動計算）
-            grid_count: グリッド数
-            investment_amount: 投資額
-        """
         self.symbol = symbol
         self.current_price = current_price
         self.grid_count = grid_count or Settings.GRID_COUNT
@@ -58,9 +43,9 @@ class GridStrategy:
             self.lower_price = lower_price
             self.upper_price = upper_price
         else:
-            range_factor = Settings.GRID_RANGE_FACTOR
-            self.lower_price = current_price * (1 - range_factor)
-            self.upper_price = current_price * (1 + range_factor)
+            factor = Settings.GRID_RANGE_FACTOR
+            self.lower_price = current_price * (1 - factor)
+            self.upper_price = current_price * (1 + factor)
             logger.info(f"価格帯を自動設定: {self.lower_price:.2f} - {self.upper_price:.2f}")
 
         self.grids: list[GridLevel] = []
@@ -72,6 +57,8 @@ class GridStrategy:
             f"間隔: {self.grid_spacing:.2f}"
         )
 
+    # ── プロパティ ──────────────────────────────────────────────────
+
     @property
     def grid_spacing(self) -> float:
         """グリッド間隔"""
@@ -82,23 +69,25 @@ class GridStrategy:
         """1グリッドあたりの利益率（%）"""
         return (self.grid_spacing / self.lower_price) * 100
 
+    # ── グリッド計算 ────────────────────────────────────────────────
+
     def _calculate_grids(self):
         """グリッドレベルを計算"""
-        self.grids = []
         spacing = self.grid_spacing
-
-        for i in range(self.grid_count):
-            price = self.lower_price + (spacing * i)
-            sell_price = price + spacing if i < self.grid_count - 1 else None
-            self.grids.append(
-                GridLevel(
-                    level=i,
-                    buy_price=price,
-                    sell_price=sell_price,
-                )
+        self.grids = [
+            GridLevel(
+                level=i,
+                buy_price=self.lower_price + spacing * i,
+                sell_price=(
+                    self.lower_price + spacing * (i + 1)
+                    if i < self.grid_count - 1 else None
+                ),
             )
-
+            for i in range(self.grid_count)
+        ]
         logger.info(f"グリッド計算完了: {len(self.grids)} レベル")
+
+    # ── 注文数量 ────────────────────────────────────────────────────
 
     def get_order_quantity(
         self,
@@ -107,38 +96,22 @@ class GridStrategy:
         step_size: float = 0,
         min_notional: float = 0,
     ) -> float:
-        """注文数量を計算（投資額を均等分配）
-
-        Args:
-            price: 注文価格
-            min_qty: 最小注文数量（LOT_SIZE filter）
-            step_size: 数量の刻み幅（LOT_SIZE filter）
-            min_notional: 最低注文金額（MIN_NOTIONAL filter）
-        """
+        """注文数量を計算（投資額を均等分配）"""
         amount_per_grid = self.investment_amount / self.grid_count
         raw_qty = amount_per_grid / price
 
-        if step_size > 0:
-            qty = math.floor(raw_qty / step_size) * step_size
-        else:
-            qty = raw_qty
+        qty = math.floor(raw_qty / step_size) * step_size if step_size > 0 else raw_qty
 
         if min_qty > 0 and qty < min_qty:
             logger.warning(f"計算数量 {qty} が最小数量 {min_qty} を下回っています")
-            # step_sizeの倍数に丸めて最小数量以上にする
-            if step_size > 0:
-                qty = math.ceil(min_qty / step_size) * step_size
-            else:
-                qty = min_qty
+            qty = math.ceil(min_qty / step_size) * step_size if step_size > 0 else min_qty
 
-        # min_notional チェック（Binanceの最低注文金額）
         if min_notional > 0:
             notional_value = qty * price
             if notional_value < min_notional:
                 logger.warning(
                     f"注文金額 {notional_value:.2f} USDT が最低注文金額 "
-                    f"{min_notional:.2f} USDT を下回っています。"
-                    f"数量を調整します: {qty:.8f} -> {min_notional / price:.8f}"
+                    f"{min_notional:.2f} USDT を下回っています"
                 )
                 adjusted_qty = min_notional / price
                 if step_size > 0:
@@ -147,7 +120,10 @@ class GridStrategy:
 
         return qty
 
+    # ── アクティブグリッド ──────────────────────────────────────────
+
     def get_active_buy_grids(self) -> list[GridLevel]:
+        """買い注文を配置すべきグリッド（未ポジション、sell_priceあり、現在価格以下）"""
         return [
             g
             for g in self.grids
@@ -157,30 +133,83 @@ class GridStrategy:
         ]
 
     def get_active_sell_grids(self) -> list[GridLevel]:
-        """売り注文を配置すべきグリッド（ポジション持ち）"""
+        """売り注文を配置すべきグリッド（ポジション持ち、sell_priceあり）"""
         return [g for g in self.grids if g.position_filled and g.sell_price is not None]
+
+    # ── ポジション管理 ───────────────────────────────────────────────
 
     def mark_position_filled(self, grid_level: int, order_id: int):
         """買い約定を記録"""
-        for grid in self.grids:
-            if grid.level == grid_level:
-                grid.position_filled = True
-                grid.buy_order_id = order_id
-                logger.info(f"グリッド {grid_level} 買い約定記録: order_id={order_id}")
-                break
+        grid = self._grid_at(grid_level)
+        if grid:
+            grid.position_filled = True
+            grid.buy_order_id = order_id
+            logger.info(f"グリッド {grid_level} 買い約定記録: order_id={order_id}")
 
     def mark_position_closed(self, grid_level: int, order_id: int):
         """売り約定を記録（ポジション解消）"""
-        for grid in self.grids:
-            if grid.level == grid_level:
-                grid.position_filled = False
-                grid.sell_order_id = order_id
-                logger.info(f"グリッド {grid_level} 売り約定記録: order_id={order_id}")
+        grid = self._grid_at(grid_level)
+        if grid:
+            grid.position_filled = False
+            grid.sell_order_id = order_id
+            logger.info(f"グリッド {grid_level} 売り約定記録: order_id={order_id}")
+
+    def _grid_at(self, level: int) -> GridLevel | None:
+        """レベル番号からグリッドを取得（O(1)、範囲外はNone）"""
+        if 0 <= level < len(self.grids):
+            return self.grids[level]
+        return None
+
+    # ── グリッドシフト ───────────────────────────────────────────────
+
+    def shift_grids(self, new_lower: float | None = None, new_upper: float | None = None):
+        """グリッド範囲をシフト（価格トレンド対応）
+
+        既存のポジションは新しいグリッドに最寄りマッピングで引き継がれます。
+        """
+        if new_lower is not None and new_upper is not None:
+            self.lower_price = new_lower
+            self.upper_price = new_upper
+        else:
+            factor = Settings.GRID_RANGE_FACTOR
+            self.lower_price = self.current_price * (1 - factor)
+            self.upper_price = self.current_price * (1 + factor)
+
+        logger.info(f"グリッド範囲シフト: {self.lower_price:.2f} - {self.upper_price:.2f}")
+
+        filled_positions = [
+            (g.buy_price, g.buy_order_id, g.filled_quantity, g.sell_price)
+            for g in self.grids
+            if g.position_filled
+        ]
+        self._calculate_grids()
+        if filled_positions:
+            self._remap_positions(filled_positions)
+
+    def _remap_positions(self, filled_positions: list[tuple]):
+        """シフト前に保存したポジションを新しいグリッドにマッピング"""
+        claimed: set[int] = set()
+        for buy_price, buy_order_id, filled_quantity, _ in filled_positions:
+            available = [g for g in self.grids if g.level not in claimed and not g.position_filled]
+            if not available:
+                logger.warning("グリッドシフト: 空きグリッド不足、一部ポジションの復元をスキップ")
                 break
+            best = min(available, key=lambda g: abs(g.buy_price - buy_price))
+            best.position_filled = True
+            best.buy_order_id = buy_order_id
+            best.filled_quantity = filled_quantity
+            claimed.add(best.level)
+            logger.debug(
+                f"ポジションマッピング: 買値{buy_price:.2f} -> "
+                f"グリッド{best.level} (買値{best.buy_price:.2f})"
+            )
+        if claimed:
+            logger.info(f"ポジションマッピング完了: {len(claimed)} 件")
+
+    # ── ステータス ─────────────────────────────────────────────────
 
     @property
     def grid_status(self) -> dict:
-        """グリッドのステータスを返す"""
         filled = sum(1 for g in self.grids if g.position_filled)
         return {
             "total_grids": len(self.grids),
@@ -193,29 +222,7 @@ class GridStrategy:
         }
 
     def update_current_price(self, price: float):
-        """現在価格を更新"""
         self.current_price = price
 
     def is_within_grid_range(self, price: float) -> bool:
-        """価格がグリッド範囲内か"""
         return self.lower_price <= price <= self.upper_price
-
-    def shift_grids(self, new_lower: Optional[float] = None, new_upper: Optional[float] = None):
-        """グリッド範囲をシフト（価格トレンド対応）
-
-        Args:
-            new_lower: 新しい下限価格（Noneの場合 current_price から自動計算）
-            new_upper: 新しい上限価格（Noneの場合 current_price から自動計算）
-        """
-        range_factor = Settings.GRID_RANGE_FACTOR
-
-        if new_lower is not None and new_upper is not None:
-            self.lower_price = new_lower
-            self.upper_price = new_upper
-        else:
-            self.lower_price = self.current_price * (1 - range_factor)
-            self.upper_price = self.current_price * (1 + range_factor)
-
-        logger.info(f"グリッド範囲シフト: {self.lower_price:.2f} - {self.upper_price:.2f}")
-
-        self._calculate_grids()

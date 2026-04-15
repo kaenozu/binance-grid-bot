@@ -1,9 +1,4 @@
-"""
-ファイルパス: src/risk_manager.py
-概要: リスク管理
-説明: 損切り、ポジション制限、証拠金管理などのリスク管理機能を提供
-関連ファイル: src/binance_client.py, src/grid_strategy.py, src/portfolio.py
-"""
+"""リスク管理"""
 
 import threading
 
@@ -34,19 +29,39 @@ class RiskManager:
         self.strategy = strategy
         self.halt_on_out_of_range = halt_on_out_of_range
 
-        # 損切り価格: グリッド下限価格を基準にパーセンテージを下回る
-        self.stop_loss_price = self.strategy.lower_price * (1 - Settings.STOP_LOSS_PERCENTAGE / 100)
-
         # ポジション管理
         self.max_positions = Settings.MAX_POSITIONS
         self.current_positions = 0
 
         self._lock = threading.Lock()
 
+        # 損切り価格: グリッド下限価格を基準にパーセンテージを下回る
+        self._stop_loss_price = self.strategy.lower_price * (
+            1 - Settings.STOP_LOSS_PERCENTAGE / 100
+        )
+
         logger.info(
             f"リスク管理初期化: 損切り={self.stop_loss_price:.2f}, "
             f"最大ポジション={self.max_positions}"
         )
+
+    @property
+    def stop_loss_price(self) -> float:
+        """損切り価格（スレッドセーフな読み取り）"""
+        with self._lock:
+            return self._stop_loss_price
+
+    def update_stop_loss_price(self, new_lower_price: float):
+        """損切り価格を更新（スレッドセーフ）
+
+        Args:
+            new_lower_price: 新しいグリッド下限価格
+        """
+        with self._lock:
+            self._stop_loss_price = new_lower_price * (
+                1 - Settings.STOP_LOSS_PERCENTAGE / 100
+            )
+            logger.info(f"損切り価格更新: {self._stop_loss_price:.2f}")
 
     def check_stop_loss(self, current_price: float) -> bool:
         """損切りラインをチェック
@@ -57,10 +72,12 @@ class RiskManager:
         Returns:
             True: 損切り発動、False: 正常
         """
-        if current_price <= self.stop_loss_price:
+        with self._lock:
+            sl_price = self._stop_loss_price
+        if current_price <= sl_price:
             logger.warning(
                 f"[STOP_LOSS] 損切り発動! 現在価格: {current_price:.2f}, "
-                f"損切り価格: {self.stop_loss_price:.2f}"
+                f"損切り価格: {sl_price:.2f}"
             )
             return True
         return False
@@ -91,7 +108,7 @@ class RiskManager:
     def risk_status(self) -> dict:
         with self._lock:
             return {
-                "stop_loss_price": self.stop_loss_price,
+                "stop_loss_price": self._stop_loss_price,
                 "current_positions": self.current_positions,
                 "max_positions": self.max_positions,
                 "stop_loss_percentage": Settings.STOP_LOSS_PERCENTAGE,

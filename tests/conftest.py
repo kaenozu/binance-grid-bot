@@ -1,9 +1,4 @@
-"""
-ファイルパス: tests/conftest.py
-概要: テスト共通の設定・フィクスチャ
-説明: pytestで使用する共通モック・フィクスチャを定義
-関連ファイル: tests/test_grid_strategy.py, tests/test_risk_manager.py
-"""
+"""テスト共通設定・フィクスチャ"""
 
 from unittest.mock import MagicMock, patch
 

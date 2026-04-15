@@ -1,9 +1,4 @@
-"""
-ファイルパス: tests/test_multi_bot.py
-概要: マルチボットのテスト
-説明: 起動/停止、複数シンボル、共有tracker、エラー分離、タイムアウト、ステータスを検証
-関連ファイル: src/multi_bot.py
-"""
+"""マルチボットのテスト"""
 
 import threading
 import time
@@ -16,7 +11,7 @@ from src.multi_bot import MultiBot
 def _make_mock_bot(running=True):
     bot = MagicMock()
     bot.is_running = running
-    bot.current_price = 50000.0
+    bot.current_price = 74000.0
     bot.strategy = MagicMock()
     bot.strategy.grids = []
     bot.portfolio = MagicMock()

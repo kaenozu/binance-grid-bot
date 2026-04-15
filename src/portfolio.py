@@ -1,17 +1,12 @@
-"""
-ファイルパス: src/portfolio.py
-概要: 資産管理・PnL計算
-説明: 取引履歴の追跡、損益計算、資産状況レポートを提供
-関連ファイル: src/binance_client.py, src/risk_manager.py, src/bot.py
-"""
+"""資産管理・PnL計算"""
 
 import threading
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
 
 from src import persistence as persistence_module
 from src.binance_client import BinanceClient
+from src.fee import calculate_net_profit
 from utils.logger import setup_logger
 
 logger = setup_logger("portfolio")
@@ -48,8 +43,8 @@ class PortfolioStats:
     win_rate: float = 0.0
     avg_profit_per_trade: float = 0.0
     total_fees: float = 0.0
-    start_time: Optional[datetime] = None
-    last_update: Optional[datetime] = None
+    start_time: datetime | None = None
+    last_update: datetime | None = None
 
 
 class Portfolio:
@@ -58,13 +53,6 @@ class Portfolio:
     def __init__(
         self, client: BinanceClient, symbol: str, quote_asset: str = "USDT", fee_rate: float = 0.0
     ):
-        """
-        Args:
-            client: Binance API クライアント
-            symbol: 取引ペア
-            quote_asset: 証拠金資産（デフォルト: USDT）
-            fee_rate: 取引手数料率
-        """
         self.client = client
         self.symbol = symbol
         self.quote_asset = quote_asset
@@ -87,6 +75,8 @@ class Portfolio:
             f"ポートフォリオ初期化: 初期残高={self.stats.initial_balance:.2f} {quote_asset}"
         )
 
+    # ── 残高 ─────────────────────────────────────────────────────────
+
     def _update_balance(self):
         """残高を更新"""
         try:
@@ -97,28 +87,29 @@ class Portfolio:
         except Exception as e:
             logger.error(f"残高取得失敗: {e}")
 
+    # ── トレード記録 ─────────────────────────────────────────────────
+
     def restore_trades(self, trade_records: list[dict]):
         """DBから復元したトレード履歴を読み込み"""
-        self.trades = []
-        for r in trade_records:
-            self.trades.append(
-                Trade(
-                    timestamp=r["timestamp"],
-                    symbol=r["symbol"],
-                    side=r["side"],
-                    price=r["price"],
-                    quantity=r["quantity"],
-                    order_id=r["order_id"],
-                    grid_level=r["grid_level"],
-                    profit=r["profit"],
-                    matched=r["matched"],
-                )
+        self.trades = [
+            Trade(
+                timestamp=r["timestamp"],
+                symbol=r["symbol"],
+                side=r["side"],
+                price=r["price"],
+                quantity=r["quantity"],
+                order_id=r["order_id"],
+                grid_level=r["grid_level"],
+                profit=r["profit"],
+                matched=r["matched"],
             )
+            for r in trade_records
+        ]
         logger.info(f"トレード履歴を復元: {len(self.trades)} 件")
 
     def record_trade(
         self, side: str, price: float, quantity: float, order_id: int, grid_level: int
-    ) -> Optional[float]:
+    ) -> float | None:
         """取引を記録
 
         Returns:
@@ -134,59 +125,18 @@ class Portfolio:
             grid_level=grid_level,
         )
 
+        profit: float | None = None
+
         with self._lock:
             self.trades.append(trade)
-            if len(self.trades) > self._max_trades:
-                unmatched_buys = [t for t in self.trades if t.side == "BUY" and not t.matched]
-                evictable = [t for t in self.trades if t.side == "SELL" or t.matched]
-                keep_count = self._max_trades - len(unmatched_buys)
-                if keep_count > 0:
-                    matched_to_keep = evictable[-keep_count:]
-                else:
-                    matched_to_keep = []
-                self.trades = unmatched_buys + matched_to_keep
+            self._evict_trades_if_needed()
             self.stats.total_trades += 1
             self.stats.last_update = datetime.now()
 
-        profit: Optional[float] = None
+            if side == "SELL":
+                profit = self._settle_sell(trade, grid_level)
 
-        if side == "SELL":
-            buy_trade = self.find_matching_buy_trade(grid_level)
-            if buy_trade:
-                if self._fee_rate > 0 and buy_trade:
-                    from src.fee import calculate_net_profit
-
-                    profit, buy_fee, sell_fee = calculate_net_profit(
-                        buy_trade.price, price, quantity, self._fee_rate
-                    )
-                    self.stats.total_fees += buy_fee + sell_fee
-                else:
-                    profit = (price - buy_trade.price) * quantity
-                trade.profit = profit
-                buy_trade.matched = True
-                trade.matched = True
-                with self._lock:
-                    self.stats.realized_profit += profit
-                    self.stats.settled_trades += 1
-                    self.stats.total_profit = (
-                        self.stats.realized_profit + self.stats.unrealized_profit
-                    )
-
-                    if profit > 0:
-                        self.stats.winning_trades += 1
-                    else:
-                        self.stats.losing_trades += 1
-
-                    if self.stats.settled_trades > 0:
-                        self.stats.win_rate = (
-                            self.stats.winning_trades / self.stats.settled_trades * 100
-                        )
-                    self.stats.avg_profit_per_trade = (
-                        self.stats.realized_profit / self.stats.settled_trades
-                    )
-
-                logger.info(f"取引記録: グリッド {grid_level}, 利益={profit:.2f}")
-
+        # ロック外で永続化（DB I/O はロック保持しない）
         try:
             persistence_module.save_trade(
                 timestamp=trade.timestamp,
@@ -205,69 +155,115 @@ class Portfolio:
         logger.info(f"取引記録追加: {side} {quantity} @ {price}")
         return profit
 
-    def find_matching_buy_trade(self, grid_level: int) -> Optional[Trade]:
-        """対応する未マッチの買い注文を最新順に探す
+    def _settle_sell(self, trade: Trade, grid_level: int) -> float | None:
+        """売り決済処理（ロック内で呼ぶこと）。利益を返すか None。"""
+        buy_trade = self._find_matching_buy_locked(grid_level)
+        if not buy_trade:
+            return None
 
-        Args:
-            grid_level: グリッドレベル
+        if self._fee_rate > 0:
+            profit, buy_fee, sell_fee = calculate_net_profit(
+                buy_trade.price, trade.price, trade.quantity, self._fee_rate
+            )
+            self.stats.total_fees += buy_fee + sell_fee
+        else:
+            profit = (trade.price - buy_trade.price) * trade.quantity
 
-        Returns:
-            対応する買い注文（ない場合はNone）
-        """
+        trade.profit = profit
+        buy_trade.matched = True
+        trade.matched = True
+
+        self._update_settled_stats(profit)
+
+        logger.info(f"取引記録: グリッド {grid_level}, 利益={profit:.2f}")
+        return profit
+
+    def _update_settled_stats(self, profit: float):
+        """決済統計を更新（ロック内で呼ぶこと）"""
+        self.stats.realized_profit += profit
+        self.stats.settled_trades += 1
+        self.stats.total_profit = self.stats.realized_profit + self.stats.unrealized_profit
+
+        if profit > 0:
+            self.stats.winning_trades += 1
+        else:
+            self.stats.losing_trades += 1
+
+        if self.stats.settled_trades > 0:
+            self.stats.win_rate = self.stats.winning_trades / self.stats.settled_trades * 100
+        self.stats.avg_profit_per_trade = self.stats.realized_profit / self.stats.settled_trades
+
+    # ── トレード検索 ─────────────────────────────────────────────────
+
+    def _find_matching_buy_locked(self, grid_level: int) -> Trade | None:
+        """対応する未マッチの買い注文を最新順に探す（ロック内で呼ぶこと）"""
         for trade in reversed(self.trades):
             if trade.side == "BUY" and trade.grid_level == grid_level and not trade.matched:
                 return trade
         return None
 
+    def find_matching_buy_trade(self, grid_level: int) -> Trade | None:
+        """対応する未マッチの買い注文を最新順に探す（スレッドセーフ）"""
+        with self._lock:
+            return self._find_matching_buy_locked(grid_level)
+
+    # ── 未実現損益 ───────────────────────────────────────────────────
+
     def calculate_unrealized_pnl(self, current_price: float):
         with self._lock:
             unrealized = 0.0
-            fee_rate = self._fee_rate
-
             for trade in self.trades:
                 if trade.side == "BUY" and not trade.matched:
                     gross = (current_price - trade.price) * trade.quantity
-                    if fee_rate > 0:
-                        gross -= trade.price * trade.quantity * fee_rate
-                        gross -= current_price * trade.quantity * fee_rate
+                    if self._fee_rate > 0:
+                        gross -= trade.price * trade.quantity * self._fee_rate
+                        gross -= current_price * trade.quantity * self._fee_rate
                     unrealized += gross
-
             self.stats.unrealized_profit = unrealized
             self.stats.total_profit = self.stats.realized_profit + unrealized
 
+    # ── レポート・統計 ───────────────────────────────────────────────
+
     def get_stats(self) -> PortfolioStats:
-        """統計情報（キャッシュ）を返す"""
         return self.stats
 
     def refresh_stats(self) -> PortfolioStats:
-        """統計情報を最新に更新"""
         self._update_balance()
         return self.stats
 
     def get_trade_history(self, limit: int = 20) -> list[Trade]:
-        """取引履歴を返す"""
         return self.trades[-limit:]
 
     def generate_report(self) -> str:
-        """レポートを生成"""
         self._update_balance()
-
         elapsed = datetime.now() - self.stats.start_time if self.stats.start_time else None
         hours = elapsed.total_seconds() / 3600 if elapsed else 0
 
-        report = f"""
-===== ポートフォリオレポート =====
-実行時間: {hours:.2f} 時間
-初期残高: {self.stats.initial_balance:.2f} {self.quote_asset}
-現在残高: {self.stats.current_balance:.2f} {self.quote_asset}
---------------------------------
-実現利益: {self.stats.realized_profit:+.2f} {self.quote_asset}
-未実現利益: {self.stats.unrealized_profit:+.2f} {self.quote_asset}
-総利益: {self.stats.total_profit:+.2f} {self.quote_asset}
---------------------------------
-取引回数: {self.stats.total_trades}
-勝率: {self.stats.win_rate:.1f}%
-平均利益/取引: {self.stats.avg_profit_per_trade:+.2f} {self.quote_asset}
-================================
-"""
-        return report.strip()
+        return (
+            f"\n"
+            f"===== ポートフォリオレポート =====\n"
+            f"実行時間: {hours:.2f} 時間\n"
+            f"初期残高: {self.stats.initial_balance:.2f} {self.quote_asset}\n"
+            f"現在残高: {self.stats.current_balance:.2f} {self.quote_asset}\n"
+            f"--------------------------------\n"
+            f"実現利益: {self.stats.realized_profit:+.2f} {self.quote_asset}\n"
+            f"未実現利益: {self.stats.unrealized_profit:+.2f} {self.quote_asset}\n"
+            f"総利益: {self.stats.total_profit:+.2f} {self.quote_asset}\n"
+            f"--------------------------------\n"
+            f"取引回数: {self.stats.total_trades}\n"
+            f"勝率: {self.stats.win_rate:.1f}%\n"
+            f"平均利益/取引: {self.stats.avg_profit_per_trade:+.2f} {self.quote_asset}\n"
+            f"================================"
+        )
+
+    # ── 内部ヘルパー ────────────────────────────────────────────────
+
+    def _evict_trades_if_needed(self):
+        """トレードリストが上限を超えた場合、古いマッチ済み/売りトレードを削除（ロック内で呼ぶこと）"""
+        if len(self.trades) <= self._max_trades:
+            return
+        unmatched_buys = [t for t in self.trades if t.side == "BUY" and not t.matched]
+        evictable = [t for t in self.trades if t.side == "SELL" or t.matched]
+        keep_count = self._max_trades - len(unmatched_buys)
+        matched_to_keep = evictable[-max(keep_count, 0):]
+        self.trades = unmatched_buys + matched_to_keep

@@ -1,9 +1,4 @@
-"""
-ファイルパス: main.py
-概要: グリッド取引ボット エントリーポイント
-説明: ボットを起動するためのメインスクリプト
-関連ファイル: src/bot.py, src/multi_bot.py, config/settings.py
-"""
+"""グリッド取引ボット エントリーポイント"""
 
 import argparse
 import os
@@ -14,7 +9,34 @@ from utils.logger import setup_logger
 
 logger = setup_logger("main")
 
-DB_PATH = os.path.join("data", "bot_state.db")
+
+def _get_data_paths() -> list[str]:
+    """DBとエクスポートのパスを収集"""
+    from src.persistence import DB_PATH
+
+    paths = []
+    if os.path.exists(DB_PATH):
+        paths.append(str(DB_PATH))
+    export_dir = os.path.join("data", "exports")
+    if os.path.isdir(export_dir):
+        for f in os.listdir(export_dir):
+            fp = os.path.join(export_dir, f)
+            if os.path.isfile(fp):
+                paths.append(fp)
+    return paths
+
+
+def _reset_db():
+    """DBとエクスポートを削除"""
+    removed = _get_data_paths()
+    for p in removed:
+        os.remove(p)
+    if removed:
+        print("削除完了:")
+        for r in removed:
+            print(f"  - {r}")
+    else:
+        print("削除対象なし（DBは既にクリーン）")
 
 
 def _confirm_production_mode():
@@ -29,27 +51,6 @@ def _confirm_production_mode():
     if confirm != "yes":
         print("中止しました")
         sys.exit(0)
-
-
-def _reset_db():
-    """DBとエクスポートを削除"""
-    removed = []
-    if os.path.exists(DB_PATH):
-        os.remove(DB_PATH)
-        removed.append(DB_PATH)
-    export_dir = os.path.join("data", "exports")
-    if os.path.isdir(export_dir):
-        for f in os.listdir(export_dir):
-            fp = os.path.join(export_dir, f)
-            if os.path.isfile(fp):
-                os.remove(fp)
-                removed.append(fp)
-    if removed:
-        print("削除完了:")
-        for r in removed:
-            print(f"  - {r}")
-    else:
-        print("削除対象なし（DBは既にクリーン）")
 
 
 def main():

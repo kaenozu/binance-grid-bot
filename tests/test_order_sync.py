@@ -1,9 +1,4 @@
-"""
-ファイルパス: tests/test_order_sync.py
-概要: 注文同期のテスト
-説明: sync_with_exchange機能を検証
-関連ファイル: src/order_sync.py
-"""
+"""注文同期のテスト"""
 
 from unittest.mock import MagicMock
 
@@ -11,15 +6,18 @@ import pytest
 
 from src.grid_strategy import GridStrategy
 from src.order_sync import _match_order_to_grid, sync_with_exchange
+from tests.conftest import BASE_PRICE, LOWER_PRICE, UPPER_PRICE
+
+SPACING = (UPPER_PRICE - LOWER_PRICE) / 10  # 2220.0
 
 
 @pytest.fixture
 def strategy():
     return GridStrategy(
         symbol="BTCUSDT",
-        current_price=50000.0,
-        lower_price=45000.0,
-        upper_price=55000.0,
+        current_price=BASE_PRICE,
+        lower_price=LOWER_PRICE,
+        upper_price=UPPER_PRICE,
         grid_count=10,
         investment_amount=1000.0,
     )
@@ -49,8 +47,15 @@ def test_sync_with_exchange_empty(order_manager, strategy):
 
 
 def test_sync_registers_exchange_orders(order_manager, strategy):
+    price = LOWER_PRICE + SPACING  # level 1
     order_manager.client.get_open_orders.return_value = [
-        {"orderId": 500, "side": "BUY", "price": "46000.00", "origQty": "0.002", "status": "NEW"},
+        {
+            "orderId": 500,
+            "side": "BUY",
+            "price": str(price),
+            "origQty": "0.002",
+            "status": "NEW",
+        },
     ]
     registered, removed = sync_with_exchange(order_manager, strategy)
     assert registered == 1
@@ -58,7 +63,7 @@ def test_sync_registers_exchange_orders(order_manager, strategy):
         order_id=500,
         grid_level=1,
         side="BUY",
-        price=46000.0,
+        price=price,
         quantity=0.002,
         status="NEW",
     )
@@ -73,11 +78,12 @@ def test_sync_removes_stale_orders(order_manager, strategy):
 
 
 def test_sync_handles_filled_orders(order_manager, strategy):
+    price = LOWER_PRICE + SPACING  # level 1
     order_manager.client.get_open_orders.return_value = [
         {
             "orderId": 600,
             "side": "BUY",
-            "price": "46000.00",
+            "price": str(price),
             "origQty": "0.002",
             "status": "FILLED",
         },
@@ -87,18 +93,20 @@ def test_sync_handles_filled_orders(order_manager, strategy):
 
 
 def test_match_order_to_grid_buy(strategy):
-    level = _match_order_to_grid(46000.0, strategy, "BUY")
+    price = LOWER_PRICE + SPACING  # level 1
+    level = _match_order_to_grid(price, strategy, "BUY")
     assert level == 1
 
 
 def test_match_order_to_grid_sell(strategy):
     strategy.grids[1].position_filled = True
-    level = _match_order_to_grid(47000.0, strategy, "SELL")
+    sell_price = LOWER_PRICE + SPACING * 2  # level 1 の sell_price
+    level = _match_order_to_grid(sell_price, strategy, "SELL")
     assert level == 1
 
 
 def test_match_order_to_grid_no_match():
-    s = GridStrategy("BTCUSDT", 50000.0, 45000.0, 55000.0, 10, 1000.0)
+    s = GridStrategy("BTCUSDT", BASE_PRICE, LOWER_PRICE, UPPER_PRICE, 10, 1000.0)
     assert _match_order_to_grid(99999.0, s, "BUY") is None
 
 

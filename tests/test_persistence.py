@@ -1,9 +1,4 @@
-"""
-ファイルパス: tests/test_persistence.py
-概要: 状態永続化のテスト
-説明: SQLiteへの保存・復元を検証
-関連ファイル: src/persistence.py
-"""
+"""状態永続化のテスト"""
 
 import sqlite3
 from datetime import datetime

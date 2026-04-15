@@ -1,19 +1,13 @@
-"""
-ファイルパス: config/settings.py
-概要: グリッド取引ボットの設定管理
-説明: 環境変数から設定を読み込み、取引パラメータを提供する
-関連ファイル: .env.example, src/bot.py
-"""
+"""環境変数から設定を読み込む"""
 
 import os
-from typing import Optional
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
-def _safe_float_optional(value: Optional[str]) -> Optional[float]:
+def _safe_float_optional(value: str | None) -> float | None:
     if not value:
         return None
     try:
@@ -22,12 +16,12 @@ def _safe_float_optional(value: Optional[str]) -> Optional[float]:
         return None
 
 
-def _safe_float(value: Optional[str], default: float = 0.0) -> float:
+def _safe_float(value: str | None, default: float = 0.0) -> float:
     result = _safe_float_optional(value)
     return result if result is not None else default
 
 
-def _safe_int(value: Optional[str], default: int = 0) -> int:
+def _safe_int(value: str | None, default: int = 0) -> int:
     if not value:
         return default
     try:
@@ -47,8 +41,8 @@ class Settings:
     # 取引設定
     TRADING_SYMBOL: str = os.getenv("TRADING_SYMBOL", "BTCUSDT")
     GRID_COUNT: int = _safe_int(os.getenv("GRID_COUNT"), 10)
-    LOWER_PRICE: Optional[float] = _safe_float_optional(os.getenv("LOWER_PRICE"))
-    UPPER_PRICE: Optional[float] = _safe_float_optional(os.getenv("UPPER_PRICE"))
+    LOWER_PRICE: float | None = _safe_float_optional(os.getenv("LOWER_PRICE"))
+    UPPER_PRICE: float | None = _safe_float_optional(os.getenv("UPPER_PRICE"))
     INVESTMENT_AMOUNT: float = _safe_float(os.getenv("INVESTMENT_AMOUNT"), 100.0) or 100.0
 
     # リスク管理

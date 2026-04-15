@@ -1,9 +1,4 @@
-"""
-ファイルパス: src/exporter.py
-概要: トレード履歴のエクスポート
-説明: 取引記録をCSV/JSON形式でファイルに出力
-関連ファイル: src/portfolio.py, src/bot.py
-"""
+"""トレード履歴のエクスポート"""
 
 import csv
 import json

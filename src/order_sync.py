@@ -1,18 +1,11 @@
-"""
-ファイルパス: src/order_sync.py
-概要: 起動時の注文同期
-説明: 取引所のオープン注文と内部状態を突合する
-関連ファイル: src/order_manager.py, src/grid_strategy.py
-"""
-
-from typing import Optional
+"""起動時の注文同期"""
 
 from utils.logger import setup_logger
 
 logger = setup_logger("order_sync")
 
 
-def sync_with_exchange(order_manager, strategy):
+def sync_with_exchange(order_manager, strategy) -> tuple[int, int]:
     """取引所のオープン注文と内部状態を同期
 
     Args:
@@ -69,9 +62,9 @@ def sync_with_exchange(order_manager, strategy):
     return registered, removed
 
 
-def _match_order_to_grid(price: float, strategy, side: str) -> Optional[int]:
+def _match_order_to_grid(price: float, strategy, side: str) -> int | None:
     """注文価格に最も近いグリッドレベルを返す"""
-    best_level: Optional[int] = None
+    best_level: int | None = None
     best_diff = float("inf")
 
     grid_spacing = strategy.grid_spacing

@@ -1,9 +1,4 @@
-"""
-ファイルパス: src/bot_shutdown.py
-概要: ボット停止・エクスポート処理
-説明: 停止時のエクスポート、オープンポジション決済、緊急停止のロジック
-関連ファイル: src/bot.py, src/exporter.py, src/order_manager.py, src/portfolio.py
-"""
+"""ボット停止・エクスポート処理"""
 
 from datetime import datetime
 from pathlib import Path
@@ -38,10 +33,17 @@ def close_open_positions(client, strategy, portfolio):
 
     logger.warning(f"オープンポジション {len(open_positions)} 件を成行決済します")
     symbol_info = client.get_symbol_info(strategy.symbol)
-    base_asset = symbol_info["base_asset"] if symbol_info else strategy.symbol.replace("USDT", "")
+
+    # symbol_info フォールバック
+    base_asset = (
+        symbol_info["base_asset"]
+        if symbol_info
+        else strategy.symbol.replace("USDT", "")
+    )
     step_size = symbol_info["step_size"] if symbol_info else 0
     min_qty = symbol_info["min_qty"] if symbol_info else 0
     min_notional = symbol_info["min_notional"] if symbol_info else 0
+
     try:
         balances = client.get_account_balance()
     except Exception as e:
@@ -62,29 +64,30 @@ def close_open_positions(client, strategy, portfolio):
             break
         try:
             qty_per_grid = grid.filled_quantity or strategy.get_order_quantity(
-                grid.buy_price,
-                min_qty=min_qty,
-                step_size=step_size,
-                min_notional=min_notional,
+                grid.buy_price, min_qty=min_qty, step_size=step_size, min_notional=min_notional
             )
             sell_qty = min(available, qty_per_grid)
             if sell_qty <= 0:
                 continue
 
+            # マッチするBUYトレードがなければ人工登録（fee計算のため）
+            if not portfolio.find_matching_buy_trade(grid.level):
+                portfolio.record_trade(
+                    side="BUY",
+                    price=grid.buy_price,
+                    quantity=sell_qty,
+                    order_id=grid.buy_order_id or -1,
+                    grid_level=grid.level,
+                )
+
             result = client.place_order(
-                symbol=strategy.symbol,
-                side="SELL",
-                quantity=sell_qty,
-                price=None,
+                symbol=strategy.symbol, side="SELL", quantity=sell_qty, price=None
             )
             filled_qty = float(result.get("executedQty", result.get("origQty", sell_qty)))
             filled_price = float(result.get("avgPrice") or result.get("price", 0))
             portfolio.record_trade(
-                side="SELL",
-                price=filled_price,
-                quantity=filled_qty,
-                order_id=result["orderId"],
-                grid_level=grid.level,
+                side="SELL", price=filled_price, quantity=filled_qty,
+                order_id=result["orderId"], grid_level=grid.level,
             )
             available -= filled_qty
             grid.position_filled = False
@@ -94,27 +97,9 @@ def close_open_positions(client, strategy, portfolio):
             logger.error(f"グリッド {grid.level}: 緊急決済失敗: {e}")
 
 
-def emergency_stop(client, strategy, order_manager, portfolio, persist_fn):
-    """緊急停止処理（オープンポジションを成行決済して終了）"""
-    logger.warning("緊急停止処理開始...")
+def _shutdown_core(client, strategy, order_manager, portfolio, persist_fn, close_positions=False):
+    """停止時の共通処理"""
     persist_fn()
-    order_manager.cancel_all_orders()
-    close_open_positions(client, strategy, portfolio)
-    print(portfolio.generate_report())
-    logger.info("緊急停止完了")
-
-
-def stop_bot(
-    client, strategy, order_manager, portfolio, persist_fn, close_positions, ws_client=None
-):
-    """ボット停止"""
-    logger.info("ボット停止中...")
-
-    if ws_client:
-        ws_client.stop()
-
-    persist_fn()
-
     canceled = order_manager.cancel_all_orders()
     logger.info(f"キャンセル完了: {canceled} 件")
 
@@ -123,7 +108,27 @@ def stop_bot(
 
     report = portfolio.generate_report()
     logger.info("\n" + report)
+    return report
 
+
+def emergency_stop(client, strategy, order_manager, portfolio, persist_fn):
+    """緊急停止処理（オープンポジションを成行決済して終了）"""
+    logger.warning("緊急停止処理開始...")
+    report = _shutdown_core(
+        client, strategy, order_manager, portfolio, persist_fn, close_positions=True
+    )
+    print(report)
+    logger.info("緊急停止完了")
+
+
+def stop_bot(
+    client, strategy, order_manager, portfolio, persist_fn, close_positions, ws_client=None
+):
+    """ボット停止"""
+    logger.info("ボット停止中...")
+    if ws_client:
+        ws_client.stop()
+
+    _shutdown_core(client, strategy, order_manager, portfolio, persist_fn, close_positions)
     export_on_stop(portfolio)
-
     logger.info("ボット停止完了")
