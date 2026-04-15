@@ -12,44 +12,44 @@ import pytest
 from config.settings import Settings
 from src.grid_strategy import GridStrategy
 
+# ── テスト用価格定数（本番のTestnet価格に合わせる） ─────────
+# Testnet の BTC は ~74000 前後で推移
+# グリッド幅は GRID_RANGE_FACTOR=0.15 で ±15% = 62900～85100
+BASE_PRICE = 74000.0
+LOWER_PRICE = 62900.0
+UPPER_PRICE = 85100.0
+GRID_SPACING = (UPPER_PRICE - LOWER_PRICE) / 10  # 2220.0
+
+# Settings クラスの設定項目名（ UPPER_CASE のクラス変数 ）
+_SETTING_NAMES = [name for name in dir(Settings) if name.isupper() and not name.startswith("_")]
+
+
+@pytest.fixture(autouse=True)
+def clean_db(tmp_path, monkeypatch):
+    """テスト実行中は本番DBではなく一時DBを使用する（全テスト共通）"""
+    db_path = tmp_path / "bot_state.db"
+    monkeypatch.setattr("src.persistence.DB_PATH", db_path)
+    monkeypatch.setattr("src.persistence._db_initialized", False)
+    yield
+
 
 @pytest.fixture(autouse=True)
 def restore_settings_after_test():
-    """各テスト後にSettingsの値を復元"""
-    # テスト前の値を保存
-    original = {
-        "BINANCE_API_KEY": Settings.BINANCE_API_KEY,
-        "BINANCE_API_SECRET": Settings.BINANCE_API_SECRET,
-        "USE_TESTNET": Settings.USE_TESTNET,
-        "TRADING_SYMBOL": Settings.TRADING_SYMBOL,
-        "GRID_COUNT": Settings.GRID_COUNT,
-        "LOWER_PRICE": Settings.LOWER_PRICE,
-        "UPPER_PRICE": Settings.UPPER_PRICE,
-        "INVESTMENT_AMOUNT": Settings.INVESTMENT_AMOUNT,
-        "STOP_LOSS_PERCENTAGE": Settings.STOP_LOSS_PERCENTAGE,
-        "MAX_POSITIONS": Settings.MAX_POSITIONS,
-        "CHECK_INTERVAL": Settings.CHECK_INTERVAL,
-        "STATUS_DISPLAY_INTERVAL": Settings.STATUS_DISPLAY_INTERVAL,
-        "MAX_CONSECUTIVE_ERRORS": Settings.MAX_CONSECUTIVE_ERRORS,
-        "GRID_RANGE_FACTOR": Settings.GRID_RANGE_FACTOR,
-        "TRADING_FEE_RATE": Settings.TRADING_FEE_RATE,
-        "CLOSE_ON_STOP": Settings.CLOSE_ON_STOP,
-        "PERSIST_INTERVAL": Settings.PERSIST_INTERVAL,
-    }
+    """各テスト後にSettingsの値を復元（自動検出）"""
+    original = {name: getattr(Settings, name) for name in _SETTING_NAMES}
     yield
-    # テスト後に値を復元
-    for key, value in original.items():
-        setattr(Settings, key, value)
+    for name, value in original.items():
+        setattr(Settings, name, value)
 
 
 @pytest.fixture
 def grid_strategy():
-    """テスト用グリッド戦略"""
+    """テスト用グリッド戦略（本番価格ベース）"""
     return GridStrategy(
         symbol="BTCUSDT",
-        current_price=50000.0,
-        lower_price=45000.0,
-        upper_price=55000.0,
+        current_price=BASE_PRICE,
+        lower_price=LOWER_PRICE,
+        upper_price=UPPER_PRICE,
         grid_count=10,
         investment_amount=1000.0,
     )
@@ -81,9 +81,9 @@ def mock_settings():
 
 @pytest.fixture
 def mock_binance_client():
-    """Binanceクライアントをモック"""
+    """Binanceクライアントをモック（本番価格ベース）"""
     client = MagicMock()
-    client.get_symbol_price.return_value = 50000.0
+    client.get_symbol_price.return_value = BASE_PRICE
     client.get_symbol_info.return_value = {
         "symbol": "BTCUSDT",
         "status": "TRADING",

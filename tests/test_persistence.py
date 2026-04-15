@@ -8,8 +8,6 @@
 import sqlite3
 from datetime import datetime
 
-import pytest
-
 from src.persistence import (
     load_grid_states,
     load_portfolio_stats,
@@ -19,14 +17,7 @@ from src.persistence import (
     save_portfolio_stats,
     save_trade,
 )
-
-
-@pytest.fixture(autouse=True)
-def clean_db(tmp_path, monkeypatch):
-    db_path = tmp_path / "bot_state.db"
-    monkeypatch.setattr("src.persistence.DB_PATH", db_path)
-    monkeypatch.setattr("src.persistence._db_initialized", False)
-    yield
+from tests.conftest import BASE_PRICE, GRID_SPACING, LOWER_PRICE
 
 
 def test_save_and_load_grid_states():
@@ -35,16 +26,16 @@ def test_save_and_load_grid_states():
     grids = [
         SimpleNamespace(
             level=0,
-            buy_price=45000.0,
-            sell_price=46000.0,
+            buy_price=LOWER_PRICE,
+            sell_price=LOWER_PRICE + GRID_SPACING,
             buy_order_id=100,
             sell_order_id=None,
             position_filled=True,
         ),
         SimpleNamespace(
             level=1,
-            buy_price=46000.0,
-            sell_price=47000.0,
+            buy_price=LOWER_PRICE + GRID_SPACING,
+            sell_price=LOWER_PRICE + GRID_SPACING * 2,
             buy_order_id=None,
             sell_order_id=101,
             position_filled=False,
@@ -94,7 +85,7 @@ def test_save_trade():
         timestamp=datetime(2026, 1, 1, 12, 0, 0),
         symbol="BTCUSDT",
         side="BUY",
-        price=50000.0,
+        price=BASE_PRICE,
         quantity=0.001,
         order_id=123,
         grid_level=3,
@@ -112,7 +103,7 @@ def test_db_file_created():
         datetime.now(),
         "BTCUSDT",
         "BUY",
-        50000.0,
+        BASE_PRICE,
         0.001,
         1,
         0,
@@ -125,7 +116,7 @@ def test_load_trades():
         timestamp=datetime(2026, 1, 1, 10, 0, 0),
         symbol="BTCUSDT",
         side="BUY",
-        price=50000.0,
+        price=BASE_PRICE,
         quantity=0.001,
         order_id=1,
         grid_level=0,
@@ -155,8 +146,8 @@ def test_save_grid_states_overwrites():
     grids_v1 = [
         SimpleNamespace(
             level=0,
-            buy_price=45000.0,
-            sell_price=46000.0,
+            buy_price=LOWER_PRICE,
+            sell_price=LOWER_PRICE + GRID_SPACING,
             buy_order_id=1,
             sell_order_id=None,
             position_filled=True,
@@ -167,8 +158,8 @@ def test_save_grid_states_overwrites():
     grids_v2 = [
         SimpleNamespace(
             level=0,
-            buy_price=48000.0,
-            sell_price=49000.0,
+            buy_price=LOWER_PRICE + GRID_SPACING * 2,
+            sell_price=LOWER_PRICE + GRID_SPACING * 3,
             buy_order_id=2,
             sell_order_id=None,
             position_filled=False,
@@ -178,7 +169,7 @@ def test_save_grid_states_overwrites():
 
     loaded = load_grid_states("BTCUSDT")
     assert len(loaded) == 1
-    assert loaded[0]["buy_price"] == 48000.0
+    assert loaded[0]["buy_price"] == LOWER_PRICE + GRID_SPACING * 2
     assert loaded[0]["position_filled"] is False
 
 
@@ -188,8 +179,8 @@ def test_multiple_symbols_independent():
     grids_btc = [
         SimpleNamespace(
             level=0,
-            buy_price=45000.0,
-            sell_price=46000.0,
+            buy_price=LOWER_PRICE,
+            sell_price=LOWER_PRICE + GRID_SPACING,
             buy_order_id=1,
             sell_order_id=None,
             position_filled=True,
@@ -211,7 +202,7 @@ def test_multiple_symbols_independent():
     loaded_btc = load_grid_states("BTCUSDT")
     loaded_eth = load_grid_states("ETHUSDT")
 
-    assert loaded_btc[0]["buy_price"] == 45000.0
+    assert loaded_btc[0]["buy_price"] == LOWER_PRICE
     assert loaded_btc[0]["position_filled"] is True
     assert loaded_eth[0]["buy_price"] == 3000.0
     assert loaded_eth[0]["position_filled"] is False

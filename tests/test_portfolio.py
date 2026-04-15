@@ -8,6 +8,9 @@
 import pytest
 
 from src.portfolio import Portfolio
+from tests.conftest import BASE_PRICE
+
+GRID_SPACING = 2220.0  # 本番相当のグリッド間隔
 
 
 class TestPortfolio:
@@ -24,52 +27,54 @@ class TestPortfolio:
     def test_record_buy_trade(self, portfolio):
         portfolio.record_trade(
             side="BUY",
-            price=50000.0,
+            price=BASE_PRICE,
             quantity=0.002,
             order_id=12345,
             grid_level=5,
         )
         assert len(portfolio.trades) == 1
         assert portfolio.trades[0].side == "BUY"
-        assert portfolio.trades[0].price == 50000.0
+        assert portfolio.trades[0].price == BASE_PRICE
         assert portfolio.trades[0].quantity == 0.002
         assert portfolio.stats.total_trades == 1
 
     def test_record_sell_trade_with_profit(self, portfolio):
         portfolio.record_trade(
             side="BUY",
-            price=50000.0,
+            price=BASE_PRICE,
             quantity=0.002,
             order_id=12345,
             grid_level=5,
         )
         portfolio.record_trade(
             side="SELL",
-            price=51000.0,
+            price=BASE_PRICE + GRID_SPACING,
             quantity=0.002,
             order_id=12346,
             grid_level=5,
         )
-        assert portfolio.stats.realized_profit == 2.0
+        expected_profit = GRID_SPACING * 0.002
+        assert portfolio.stats.realized_profit == expected_profit
         assert portfolio.stats.winning_trades == 1
         assert portfolio.stats.losing_trades == 0
 
     def test_record_sell_trade_with_loss(self, portfolio):
         portfolio.record_trade(
             side="BUY",
-            price=50000.0,
+            price=BASE_PRICE,
             quantity=0.002,
             order_id=12345,
             grid_level=5,
         )
         portfolio.record_trade(
             side="SELL",
-            price=49000.0,
+            price=BASE_PRICE - 500,
             quantity=0.002,
             order_id=12346,
             grid_level=5,
         )
-        assert portfolio.stats.realized_profit == -2.0
+        expected_profit = -500 * 0.002
+        assert portfolio.stats.realized_profit == expected_profit
         assert portfolio.stats.winning_trades == 0
         assert portfolio.stats.losing_trades == 1
 
@@ -77,12 +82,12 @@ class TestPortfolio:
         for i in range(3):
             portfolio.record_trade(
                 side="BUY",
-                price=50000.0,
+                price=BASE_PRICE,
                 quantity=0.002,
                 order_id=12340 + i * 2,
                 grid_level=i,
             )
-            sell_price = 51000.0 if i < 2 else 49000.0
+            sell_price = (BASE_PRICE + GRID_SPACING) if i < 2 else (BASE_PRICE - 500)
             portfolio.record_trade(
                 side="SELL",
                 price=sell_price,
@@ -97,41 +102,42 @@ class TestPortfolio:
     def test_avg_profit_per_trade_uses_settled_count(self, portfolio):
         portfolio.record_trade(
             side="BUY",
-            price=50000.0,
+            price=BASE_PRICE,
             quantity=0.002,
             order_id=12345,
             grid_level=0,
         )
         portfolio.record_trade(
             side="SELL",
-            price=51000.0,
+            price=BASE_PRICE + GRID_SPACING,
             quantity=0.002,
             order_id=12346,
             grid_level=0,
         )
         assert portfolio.stats.settled_trades == 1
-        assert abs(portfolio.stats.avg_profit_per_trade - 2.0) < 0.01
+        expected_avg = GRID_SPACING * 0.002
+        assert abs(portfolio.stats.avg_profit_per_trade - expected_avg) < 0.01
 
     def test_unrealized_pnl(self, portfolio):
         portfolio.record_trade(
             side="BUY",
-            price=50000.0,
+            price=BASE_PRICE,
             quantity=0.002,
             order_id=12345,
             grid_level=5,
         )
-        portfolio.calculate_unrealized_pnl(51000.0)
-        assert portfolio.stats.unrealized_profit == 2.0
+        portfolio.calculate_unrealized_pnl(BASE_PRICE + 1000)
+        assert portfolio.stats.unrealized_profit == 1000 * 0.002
 
     def test_unrealized_pnl_no_positions(self, portfolio):
-        portfolio.calculate_unrealized_pnl(51000.0)
+        portfolio.calculate_unrealized_pnl(BASE_PRICE + 1000)
         assert portfolio.stats.unrealized_profit == 0.0
 
     def test_trade_history_limit(self, portfolio):
         for i in range(30):
             portfolio.record_trade(
                 side="BUY",
-                price=50000.0,
+                price=BASE_PRICE,
                 quantity=0.002,
                 order_id=12340 + i,
                 grid_level=i % 10,
@@ -142,14 +148,14 @@ class TestPortfolio:
     def test_find_matching_buy_trade(self, portfolio):
         portfolio.record_trade(
             side="BUY",
-            price=50000.0,
+            price=BASE_PRICE,
             quantity=0.002,
             order_id=12345,
             grid_level=5,
         )
         buy_trade = portfolio.find_matching_buy_trade(5)
         assert buy_trade is not None
-        assert buy_trade.price == 50000.0
+        assert buy_trade.price == BASE_PRICE
 
     def test_find_matching_buy_trade_not_found(self, portfolio):
         assert portfolio.find_matching_buy_trade(99) is None
@@ -157,62 +163,67 @@ class TestPortfolio:
     def test_matched_flag_prevents_double_matching(self, portfolio):
         portfolio.record_trade(
             side="BUY",
-            price=50000.0,
+            price=BASE_PRICE,
             quantity=0.002,
             order_id=100,
             grid_level=5,
         )
         portfolio.record_trade(
             side="SELL",
-            price=51000.0,
+            price=BASE_PRICE + GRID_SPACING,
             quantity=0.002,
             order_id=101,
             grid_level=5,
         )
         portfolio.record_trade(
             side="BUY",
-            price=49000.0,
+            price=BASE_PRICE - GRID_SPACING,
             quantity=0.002,
             order_id=102,
             grid_level=5,
         )
         buy_trade = portfolio.find_matching_buy_trade(5)
         assert buy_trade is not None
-        assert buy_trade.price == 49000.0
+        assert buy_trade.price == BASE_PRICE - GRID_SPACING
 
     def test_record_sell_trade_with_fee(self, mock_client_for_portfolio):
-        portfolio = Portfolio(mock_client_for_portfolio, "BTCUSDT", "USDT", fee_rate=0.001)
+        fee_rate = 0.001
+        portfolio = Portfolio(
+            mock_client_for_portfolio, "BTCUSDT", "USDT", fee_rate=fee_rate
+        )
         portfolio.record_trade(
             side="BUY",
-            price=50000.0,
+            price=BASE_PRICE,
             quantity=0.002,
             order_id=12345,
             grid_level=5,
         )
         portfolio.record_trade(
             side="SELL",
-            price=51000.0,
+            price=BASE_PRICE + GRID_SPACING,
             quantity=0.002,
             order_id=12346,
             grid_level=5,
         )
-        # buy_fee = 50000 * 0.002 * 0.001 = 0.1
-        # sell_fee = 51000 * 0.002 * 0.001 = 0.102
-        # net profit = 2.0 - 0.1 - 0.102 = 1.798
-        assert abs(portfolio.stats.realized_profit - 1.798) < 0.01
-        assert abs(portfolio.stats.total_fees - 0.202) < 0.001
+        buy_fee = BASE_PRICE * 0.002 * fee_rate
+        sell_fee = (BASE_PRICE + GRID_SPACING) * 0.002 * fee_rate
+        gross_profit = GRID_SPACING * 0.002
+        expected_profit = gross_profit - buy_fee - sell_fee
+        expected_fees = buy_fee + sell_fee
+        assert abs(portfolio.stats.realized_profit - expected_profit) < 0.01
+        assert abs(portfolio.stats.total_fees - expected_fees) < 0.001
 
     def test_generate_report(self, portfolio):
         portfolio.record_trade(
             side="BUY",
-            price=50000.0,
+            price=BASE_PRICE,
             quantity=0.002,
             order_id=12345,
             grid_level=5,
         )
         portfolio.record_trade(
             side="SELL",
-            price=51000.0,
+            price=BASE_PRICE + GRID_SPACING,
             quantity=0.002,
             order_id=12346,
             grid_level=5,
