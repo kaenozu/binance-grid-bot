@@ -25,6 +25,7 @@ def clean_db(tmp_path, monkeypatch):
     db_path = tmp_path / "bot_state.db"
     monkeypatch.setattr("src.persistence.DB_PATH", db_path)
     monkeypatch.setattr("src.persistence._db_initialized", False)
+    monkeypatch.setattr("src.persistence._connection", None)
     yield
 
 

@@ -1,4 +1,9 @@
-"""ボットステータス表示"""
+"""ボットステータス表示
+
+ファイルの役割: コンソールへのステータス表示
+なぜ存在するか: 取引状況可視化のため
+関連ファイル: bot.py（メインループ）, portfolio.py（統計）, risk_manager.py（リスク）
+"""
 
 from datetime import datetime
 

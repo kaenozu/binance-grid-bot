@@ -1,4 +1,9 @@
-"""資産管理・PnL計算"""
+"""資産管理・PnL計算
+
+ファイルの役割: ポートフォリオ統計・未実現損益・取引履歴を管理
+なぜ存在するか: 取引の成績追跡と利益計算のため
+関連ファイル: bot.py（メインループ）, persistence.py（永続化）, fee.py（手数料計算）
+"""
 
 import threading
 from dataclasses import dataclass
@@ -265,5 +270,5 @@ class Portfolio:
         unmatched_buys = [t for t in self.trades if t.side == "BUY" and not t.matched]
         evictable = [t for t in self.trades if t.side == "SELL" or t.matched]
         keep_count = self._max_trades - len(unmatched_buys)
-        matched_to_keep = evictable[-max(keep_count, 0):]
+        matched_to_keep = evictable[-max(keep_count, 0) :]
         self.trades = unmatched_buys + matched_to_keep

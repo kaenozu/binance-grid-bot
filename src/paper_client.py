@@ -1,4 +1,9 @@
-"""ペーパートレード用クライアント"""
+"""ペーパートレード用クライアント
+
+ファイルの役割: テスト用の疑似取引を実現（Binance API不要）
+なぜ存在するか: 風險なく取引ロジックをテストするため
+関連ファイル: binance_client.py（本番クライアント）, bot.py（メインループ）
+"""
 
 import requests as requests_lib
 
@@ -106,8 +111,13 @@ class PaperClient:
     # ── プライベートヘルパー ─────────────────────────────────────────
 
     def _build_order(
-        self, order_id: int, symbol: str, side: str,
-        price: float, quantity: float, status: str,
+        self,
+        order_id: int,
+        symbol: str,
+        side: str,
+        price: float,
+        quantity: float,
+        status: str,
     ) -> dict:
         qty_str = f"{quantity:.8f}"
         return {
