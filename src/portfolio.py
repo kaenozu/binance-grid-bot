@@ -131,6 +131,7 @@ class Portfolio:
         )
 
         profit: float | None = None
+        matched_buy_order_id: int | None = None
 
         with self._lock:
             self.trades.append(trade)
@@ -139,7 +140,9 @@ class Portfolio:
             self.stats.last_update = datetime.now()
 
             if side == "SELL":
-                profit = self._settle_sell(trade, grid_level)
+                result = self._settle_sell(trade, grid_level)
+                if result is not None:
+                    profit, matched_buy_order_id = result
 
         # ロック外で永続化（DB I/O はロック保持しない）
         try:
@@ -154,14 +157,17 @@ class Portfolio:
                 profit=trade.profit,
                 matched=trade.matched,
             )
+            # SELL約定時に対応するBUYのmatchedもDBに反映
+            if side == "SELL" and matched_buy_order_id is not None:
+                persistence_module.update_trade_matched(matched_buy_order_id, True)
         except Exception as e:
             logger.error(f"トレード保存失敗: {e}")
 
         logger.info(f"取引記録追加: {side} {quantity} @ {price}")
         return profit
 
-    def _settle_sell(self, trade: Trade, grid_level: int) -> float | None:
-        """売り決済処理（ロック内で呼ぶこと）。利益を返すか None。"""
+    def _settle_sell(self, trade: Trade, grid_level: int) -> tuple[float, int] | None:
+        """売り決済処理（ロック内で呼ぶこと）。(profit, buy_order_id) を返すか None。"""
         buy_trade = self._find_matching_buy_locked(grid_level)
         if not buy_trade:
             return None
@@ -181,7 +187,7 @@ class Portfolio:
         self._update_settled_stats(profit)
 
         logger.info(f"取引記録: グリッド {grid_level}, 利益={profit:.2f}")
-        return profit
+        return profit, buy_trade.order_id
 
     def _update_settled_stats(self, profit: float):
         """決済統計を更新（ロック内で呼ぶこと）"""
