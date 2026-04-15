@@ -41,6 +41,7 @@ def set_db_path(path: Path | str):
             old_conn.close()
         except Exception:
             pass
+    logger.info(f"DBパス切替: {path}")
 
 
 def _ensure_db():
@@ -146,6 +147,7 @@ def _reset_connection():
             pass
     _connection = None
     _db_initialized = False
+    logger.info("DB接続リセット完了")
 
 
 def save_trade(
@@ -310,6 +312,7 @@ def update_trade_matched(order_id: int, matched: bool):
                 "UPDATE trades SET matched = ? WHERE order_id = ?",
                 (int(matched), order_id),
             )
+    logger.debug(f"matchedフラグ更新: order_id={order_id}, matched={matched}")
 
 
 def load_trades() -> list[dict]:
