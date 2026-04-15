@@ -134,75 +134,78 @@ def save_trade(
     profit: float = 0.0,
     matched: bool = False,
 ):
-    conn = _get_connection()
-    conn.execute(
-        "INSERT INTO trades "
-        "(timestamp, symbol, side, price, quantity, order_id, "
-        "grid_level, profit, matched) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            timestamp.isoformat(),
-            symbol,
-            side,
-            price,
-            quantity,
-            order_id,
-            grid_level,
-            profit,
-            int(matched),
-        ),
-    )
-    conn.commit()
+    with _db_lock:
+        conn = _get_connection()
+        with conn:
+            conn.execute(
+                "INSERT INTO trades "
+                "(timestamp, symbol, side, price, quantity, order_id, "
+                "grid_level, profit, matched) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    timestamp.isoformat(),
+                    symbol,
+                    side,
+                    price,
+                    quantity,
+                    order_id,
+                    grid_level,
+                    profit,
+                    int(matched),
+                ),
+            )
 
 
 def save_grid_states(symbol: str, grids: list):
-    conn = _get_connection()
-    conn.execute("DELETE FROM grid_states WHERE symbol = ?", (symbol,))
-    for g in grids:
-        conn.execute(
-            "INSERT INTO grid_states "
-            "(symbol, grid_level, buy_price, sell_price, buy_order_id, "
-            "sell_order_id, position_filled) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (
-                symbol,
-                g.level,
-                g.buy_price,
-                json.dumps(g.sell_price) if g.sell_price is not None else None,
-                g.buy_order_id,
-                g.sell_order_id,
-                int(g.position_filled),
-            ),
-        )
-    conn.commit()
+    with _db_lock:
+        conn = _get_connection()
+        with conn:
+            conn.execute("DELETE FROM grid_states WHERE symbol = ?", (symbol,))
+            for g in grids:
+                conn.execute(
+                    "INSERT INTO grid_states "
+                    "(symbol, grid_level, buy_price, sell_price, buy_order_id, "
+                    "sell_order_id, position_filled) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        symbol,
+                        g.level,
+                        g.buy_price,
+                        json.dumps(g.sell_price) if g.sell_price is not None else None,
+                        g.buy_order_id,
+                        g.sell_order_id,
+                        int(g.position_filled),
+                    ),
+                )
 
 
 def save_portfolio_stats(stats):
-    conn = _get_connection()
-    conn.execute("DELETE FROM portfolio_stats WHERE id = 1")
-    conn.execute(
-        "INSERT INTO portfolio_stats "
-        "(id, initial_balance, current_balance, total_profit, realized_profit, "
-        "unrealized_profit, total_trades, winning_trades, losing_trades, "
-        "settled_trades, win_rate, avg_profit_per_trade, total_fees, "
-        "start_time, last_update) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, "
-        "?, ?, ?, ?, ?, ?)",
-        (
-            stats.initial_balance,
-            stats.current_balance,
-            stats.total_profit,
-            stats.realized_profit,
-            stats.unrealized_profit,
-            stats.total_trades,
-            stats.winning_trades,
-            stats.losing_trades,
-            stats.settled_trades,
-            stats.win_rate,
-            stats.avg_profit_per_trade,
-            stats.total_fees,
-            stats.start_time.isoformat() if stats.start_time else None,
-            stats.last_update.isoformat() if stats.last_update else None,
-        ),
-    )
-    conn.commit()
+    with _db_lock:
+        conn = _get_connection()
+        with conn:
+            conn.execute("DELETE FROM portfolio_stats WHERE id = 1")
+            conn.execute(
+                "INSERT INTO portfolio_stats "
+                "(id, initial_balance, current_balance, total_profit, realized_profit, "
+                "unrealized_profit, total_trades, winning_trades, losing_trades, "
+                "settled_trades, win_rate, avg_profit_per_trade, total_fees, "
+                "start_time, last_update) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, "
+                "?, ?, ?, ?, ?, ?)",
+                (
+                    stats.initial_balance,
+                    stats.current_balance,
+                    stats.total_profit,
+                    stats.realized_profit,
+                    stats.unrealized_profit,
+                    stats.total_trades,
+                    stats.winning_trades,
+                    stats.losing_trades,
+                    stats.settled_trades,
+                    stats.win_rate,
+                    stats.avg_profit_per_trade,
+                    stats.total_fees,
+                    stats.start_time.isoformat() if stats.start_time else None,
+                    stats.last_update.isoformat() if stats.last_update else None,
+                ),
+            )
 
 
 def load_grid_states(symbol: str) -> list[dict] | None:
