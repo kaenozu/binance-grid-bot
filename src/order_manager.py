@@ -5,13 +5,12 @@
 関連ファイル: bot.py（メインループ）, binance_client.py（API通信）, grid_strategy.py（戦略）
 """
 
-import math
 from dataclasses import dataclass, field
 
 from src.binance_client import BinanceClient
 from src.grid_strategy import GridStrategy
-from utils.price_utils import adjust_price
 from utils.logger import setup_logger
+from utils.price_utils import adjust_price
 
 logger = setup_logger("order_manager")
 
