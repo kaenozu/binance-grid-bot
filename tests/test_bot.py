@@ -2,6 +2,7 @@
 
 from unittest.mock import MagicMock, patch
 
+from config.settings import Settings
 from src.grid_strategy import GridStrategy
 from tests.conftest import BASE_PRICE, LOWER_PRICE, UPPER_PRICE
 
@@ -31,7 +32,9 @@ def test_bot_initialization_sets_price(mock_settings):
 
                         bot = GridBot()
 
-                        mock_client.get_symbol_price.assert_called_once_with("BTCUSDT")
+                        mock_client.get_symbol_price.assert_called_once_with(
+                            Settings.TRADING_SYMBOL
+                        )
                         assert bot.is_running is False
                         assert bot.consecutive_errors == 0
 
