@@ -171,62 +171,70 @@ class GridBot:
             if self.is_running:
                 self.stop()
 
+    def _update_price(self):
+        """現在価格を更新"""
+        ws_price = self.ws_client.current_price if self.ws_client else None
+        if ws_price is not None:
+            self.current_price = ws_price
+        else:
+            self.current_price = self.client.get_symbol_price(self.symbol)
+        self.strategy.update_current_price(self.current_price)
+
     def _tick(self) -> None:
         """1 ティック処理"""
         try:
-            ws_price = self.ws_client.current_price if self.ws_client else None
-            if ws_price is not None:
-                self.current_price = ws_price
-            else:
-                self.current_price = self.client.get_symbol_price(self.symbol)
-
-            # 異常価格（Testnetスパイク/0価格）を検知してスキップ
+            self._update_price()
             if not self._validate_price(self.current_price):
                 return
 
-            self.strategy.update_current_price(self.current_price)
-
-            if self.risk_manager.should_halt_trading(self.current_price):
-                logger.warning("リスク管理により取引を停止します")
-                self._emergency_stop()
-                self.consecutive_errors = 0
+            if self._check_halt_conditions():
                 return
 
-            self._process_fills()
-            self.portfolio.calculate_unrealized_pnl(self.current_price)
-            self.consecutive_errors = 0
-
-            now = time.time()
-            if now - self._last_status_time >= Settings.STATUS_DISPLAY_INTERVAL:
-                self._display_status(detail=False)
-                self._last_status_time = now
-
-            # 詳細ステータスは5分間隔
-            detail_interval = max(Settings.STATUS_DISPLAY_INTERVAL * 5, 300)
-            if now - self._last_detail_time >= detail_interval:
-                self._display_status(detail=True)
-                self._last_detail_time = now
-
-            if now - self._last_persist_time >= Settings.PERSIST_INTERVAL:
-                self._persist_state()
-                self._last_persist_time = now
-
-            if not self.strategy.is_within_grid_range(self.current_price):
-                self._handle_grid_shift()
+            self._execute_trading_logic()
+            self._run_maintenance_tasks()
 
         except Exception as e:
-            self.consecutive_errors += 1
-            logger.error(
-                f"ティック処理エラー ({self.consecutive_errors}/"
-                f"{Settings.MAX_CONSECUTIVE_ERRORS}): {e}"
-            )
-            logger.error(f"スタックトレース:\n{traceback.format_exc()}")
+            self._handle_tick_error(e)
 
-            if self.consecutive_errors >= Settings.MAX_CONSECUTIVE_ERRORS:
-                logger.critical(
-                    f"連続エラーが{Settings.MAX_CONSECUTIVE_ERRORS}回に到達。ボットを停止します。"
-                )
-                self.stop()
+    def _check_halt_conditions(self) -> bool:
+        """取引停止条件のチェック"""
+        if self.risk_manager.should_halt_trading(self.current_price):
+            logger.warning("リスク管理により取引を停止します")
+            self._emergency_stop()
+            self.consecutive_errors = 0
+            return True
+        return False
+
+    def _execute_trading_logic(self) -> None:
+        """取引実行ロジックの管理"""
+        self._process_fills()
+        self.portfolio.calculate_unrealized_pnl(self.current_price)
+        self.consecutive_errors = 0
+
+        if not self.strategy.is_within_grid_range(self.current_price):
+            self._handle_grid_shift()
+
+    def _run_maintenance_tasks(self) -> None:
+        """定期メンテナンスの実行"""
+        now = time.time()
+        if now - self._last_status_time >= Settings.STATUS_DISPLAY_INTERVAL:
+            self._display_status()
+            self._last_status_time = now
+
+    def _handle_tick_error(self, e: Exception) -> None:
+        """ティック処理エラーのハンドリング"""
+        self.consecutive_errors += 1
+        logger.error(
+            f"ティック処理エラー ({self.consecutive_errors}/"
+            f"{Settings.MAX_CONSECUTIVE_ERRORS}): {e}"
+        )
+        logger.error(f"スタックトレース:\n{traceback.format_exc()}")
+
+        if self.consecutive_errors >= Settings.MAX_CONSECUTIVE_ERRORS:
+            logger.critical(
+                f"連続エラーが{Settings.MAX_CONSECUTIVE_ERRORS}回に到達。ボットを停止します。"
+            )
+            self.stop()
 
     # ── 注文管理 ───────────────────────────────────────────────────
 
