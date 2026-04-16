@@ -15,4 +15,5 @@ COPY --chown=botuser:botuser . .
 USER botuser
 ENV PATH=/home/botuser/.local/bin:$PATH
 
-CMD ["python", "main.py"]
+ENTRYPOINT ["python"]
+CMD ["main.py"]

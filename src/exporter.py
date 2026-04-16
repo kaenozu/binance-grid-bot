@@ -2,7 +2,7 @@
 
 ファイルの役割: 取引履歴をCSV/JSON形式でエクスポート
 なぜ存在するか: 成績分析・税金を計算するため
-関連ファイル: portfolio.py（統計）, bot_shutdown.py（停止時処理）
+関連ファイル: bot.py（停止時処理）, portfolio.py（統計）
 """
 
 import csv

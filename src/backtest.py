@@ -10,8 +10,8 @@ from datetime import datetime
 import requests
 
 from config.settings import Settings
-from src.fee import calculate_net_profit
 from src.grid_strategy import GridStrategy
+from utils.fee import calculate_net_profit
 from utils.logger import setup_logger
 
 logger = setup_logger("backtest")
@@ -135,8 +135,8 @@ class BacktestEngine:
     def _resolve_range(self, initial_price: float) -> tuple[float, float]:
         """グリッド範囲を解決"""
         factor = Settings.GRID_RANGE_FACTOR
-        lower = self.lower_price if self.lower_price else initial_price * (1 - factor)
-        upper = self.upper_price if self.upper_price else initial_price * (1 + factor)
+        lower = self.lower_price if self.lower_price is not None else initial_price * (1 - factor)
+        upper = self.upper_price if self.upper_price is not None else initial_price * (1 + factor)
         return lower, upper
 
     def _place_initial_orders(self):

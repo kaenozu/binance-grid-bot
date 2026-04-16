@@ -10,6 +10,7 @@ import threading
 import time
 from typing import Callable
 
+from config.settings import Settings
 from utils.logger import setup_logger
 
 logger = setup_logger("ws_client")
@@ -18,7 +19,8 @@ logger = setup_logger("ws_client")
 class BinanceWebSocketClient:
     """Binance WebSocket クライアント"""
 
-    STREAM_BASE_URL = "wss://stream.binance.com:9443/ws"
+    MAINNET_STREAM_URL = "wss://stream.binance.com:9443/ws"
+    TESTNET_STREAM_URL = "wss://testnet.binance.vision/ws"
 
     def __init__(self):
         self._running = False
@@ -30,6 +32,10 @@ class BinanceWebSocketClient:
         self._price_lock = threading.Lock()
         self._symbol: str | None = None
         self._reconnect_delay = 1
+
+    @property
+    def _stream_base_url(self) -> str:
+        return self.TESTNET_STREAM_URL if Settings.USE_TESTNET else self.MAINNET_STREAM_URL
 
     @property
     def current_price(self) -> float | None:
@@ -48,7 +54,7 @@ class BinanceWebSocketClient:
         self._symbol = symbol
 
         def _run():
-            url = f"{self.STREAM_BASE_URL}/{symbol.lower()}@miniTicker"
+            url = f"{self._stream_base_url}/{symbol.lower()}@miniTicker"
             while self._running:
                 try:
                     ws = websocket.WebSocketApp(

@@ -11,7 +11,7 @@ from datetime import datetime
 
 from src import persistence as persistence_module
 from src.binance_client import BinanceClient
-from src.fee import calculate_net_profit
+from utils.fee import calculate_net_profit
 from utils.logger import setup_logger
 
 logger = setup_logger("portfolio")
@@ -95,8 +95,8 @@ class Portfolio:
     # ── トレード記録 ─────────────────────────────────────────────────
 
     def restore_trades(self, trade_records: list[dict]):
-        """DBから復元したトレード履歴を読み込み"""
-        self.trades = [
+        """DBから復元したトレード履歴を読み込み（上限適用済み）"""
+        trades = [
             Trade(
                 timestamp=r["timestamp"],
                 symbol=r["symbol"],
@@ -110,7 +110,15 @@ class Portfolio:
             )
             for r in trade_records
         ]
-        logger.info(f"トレード履歴を復元: {len(self.trades)} 件")
+        if len(trades) > self._max_trades:
+            unmatched = [t for t in trades if t.side == "BUY" and not t.matched]
+            evictable = [t for t in trades if t.side == "SELL" or t.matched]
+            keep_count = self._max_trades - len(unmatched)
+            matched_to_keep = evictable[-keep_count:] if keep_count > 0 else []
+            self.trades = unmatched + matched_to_keep
+        else:
+            self.trades = trades
+        logger.info(f"トレード履歴を復元: {len(self.trades)} 件 (DB内: {len(trade_records)} 件)")
 
     def record_trade(
         self, side: str, price: float, quantity: float, order_id: int, grid_level: int
