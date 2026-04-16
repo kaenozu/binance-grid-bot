@@ -2,44 +2,64 @@
 
 from unittest.mock import MagicMock, patch
 
-from config.settings import Settings
 from src.grid_strategy import GridStrategy
 from tests.conftest import BASE_PRICE, LOWER_PRICE, UPPER_PRICE
 
 
-def test_bot_initialization_sets_price(mock_settings):
+def test_bot_initialization_sets_price():
+    """初期化時に現在価格を取得する"""
     mock_client = MagicMock()
     mock_client.get_symbol_price.return_value = BASE_PRICE
     mock_client.get_account_balance.return_value = {
         "USDT": {"free": 10000.0, "locked": 0.0},
     }
 
-    with patch("src.bot.BinanceClient", return_value=mock_client):
-        with patch("src.bot.GridStrategy") as mock_strategy_cls:
-            mock_strategy = MagicMock()
-            mock_strategy.symbol = "BTCUSDT"
-            mock_strategy.grids = []
-            mock_strategy_cls.return_value = mock_strategy
+    with patch("src.bot.Settings") as mock_settings_cls:
+        mock_settings_cls.TRADING_SYMBOL = "BTCUSDT"
+        mock_settings_cls.BINANCE_API_KEY = "test_api_key"
+        mock_settings_cls.BINANCE_API_SECRET = "test_api_secret"
+        mock_settings_cls.USE_TESTNET = True
+        mock_settings_cls.GRID_COUNT = 10
+        mock_settings_cls.LOWER_PRICE = None
+        mock_settings_cls.UPPER_PRICE = None
+        mock_settings_cls.INVESTMENT_AMOUNT = 1000.0
+        mock_settings_cls.STOP_LOSS_PERCENTAGE = 5.0
+        mock_settings_cls.MAX_POSITIONS = 5
+        mock_settings_cls.CHECK_INTERVAL = 10
+        mock_settings_cls.MAX_CONSECUTIVE_ERRORS = 5
+        mock_settings_cls.GRID_RANGE_FACTOR = 0.15
+        mock_settings_cls.TRADING_FEE_RATE = 0.001
+        mock_settings_cls.CLOSE_ON_STOP = False
+        mock_settings_cls.PERSIST_INTERVAL = 60
+        mock_settings_cls.validate.return_value = []
 
-            with patch("src.bot.OrderManager"):
-                with patch("src.bot.RiskManager"):
-                    with patch("src.bot.Portfolio") as mock_port:
-                        mock_port.return_value = MagicMock()
-                        mock_port.stats = MagicMock()
-                        mock_port.stats.start_time = None
+        with patch("src.bot.BinanceClient", return_value=mock_client):
+            with patch("src.bot.GridStrategy") as mock_strategy_cls:
+                mock_strategy = MagicMock()
+                mock_strategy.symbol = "BTCUSDT"
+                mock_strategy.grids = []
+                mock_strategy_cls.return_value = mock_strategy
 
-                        from src.bot import GridBot
+                with patch("src.bot.OrderManager"):
+                    with patch("src.bot.RiskManager"):
+                        with patch("src.bot.Portfolio") as mock_port:
+                            mock_port.return_value = MagicMock()
+                            mock_port.stats = MagicMock()
+                            mock_port.stats.start_time = None
 
-                        bot = GridBot()
+                            from src.bot import GridBot
 
-                        mock_client.get_symbol_price.assert_called_once_with(
-                            Settings.TRADING_SYMBOL
-                        )
-                        assert bot.is_running is False
-                        assert bot.consecutive_errors == 0
+                            bot = GridBot()
+
+                            mock_client.get_symbol_price.assert_called_once_with(
+                                "BTCUSDT"
+                            )
+                            assert bot.is_running is False
+                            assert bot.consecutive_errors == 0
 
 
 def test_tick_processes_fills():
+    """ティック処理で注文の約定を処理する"""
     mock_client = MagicMock()
     mock_client.get_symbol_price.return_value = BASE_PRICE
 
@@ -74,6 +94,9 @@ def test_tick_processes_fills():
     bot.is_running = True
     bot.consecutive_errors = 0
     bot._last_status_time = 0.0
+    bot._last_detail_time = 0.0
+    bot._last_persist_time = 0.0
+    bot.current_price = BASE_PRICE
 
     bot._tick()
     mock_client.get_symbol_price.assert_called()
@@ -81,6 +104,7 @@ def test_tick_processes_fills():
 
 
 def test_tick_halts_on_stop_loss():
+    """損切り時にボットが停止する"""
     strategy = GridStrategy(
         symbol="BTCUSDT",
         current_price=BASE_PRICE,
@@ -128,6 +152,7 @@ def test_tick_halts_on_stop_loss():
 
 
 def test_handle_grid_shift_preserves_filled_positions():
+    """グリッドシフト時に約定済みポジションを保持する"""
     strategy = GridStrategy(
         symbol="BTCUSDT",
         current_price=BASE_PRICE,
