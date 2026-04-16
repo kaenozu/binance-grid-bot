@@ -58,12 +58,40 @@ class GridBot:
         self.is_running = False
         self.consecutive_errors = 0
         self._last_status_time: float = 0
+        self._last_detail_time: float = 0
         self._last_persist_time: float = 0
 
         self._restore_state()
         self._sync_orders()
 
         logger.info("グリッドボット初期化完了")
+
+    # ── 価格検証 ───────────────────────────────────────────────────
+
+    def _validate_price(self, price: float) -> bool:
+        """異常価格（0, 負値, 極端な変動）を検知してスキップ
+
+        Testnetでは時々0や極端なスパイク価格が返ることがある。
+        前回価格との変動率が50%超、または0以下の場合は異常とみなす。
+        """
+        if not isinstance(price, (int, float)) or price <= 0:
+            logger.warning(f"異常価格を検知: {price}。スキップします。")
+            return False
+
+        # 初回ティックは検証なし
+        if not hasattr(self, 'current_price') or self.current_price == 0:
+            return True
+
+        # 前回価格との変動率チェック（50%超は異常）
+        prev_price = self.strategy.current_price
+        if isinstance(prev_price, (int, float)) and prev_price > 0 and abs(price - prev_price) / prev_price > 0.5:
+            logger.warning(
+                f"異常な価格変動を検知: {prev_price:.2f} -> {price:.2f} "
+                f"({abs(price - prev_price) / prev_price * 100:.1f}%). スキップします。"
+            )
+            return False
+
+        return True
 
     # ── 初期化ヘルパー ──────────────────────────────────────────────
 
@@ -120,6 +148,7 @@ class GridBot:
 
         self.is_running = True
         self._last_status_time = time.time()
+        self._last_detail_time = time.time()
 
         if self.ws_client:
             self.ws_client.start_price_stream(self.symbol)
@@ -146,6 +175,11 @@ class GridBot:
                 self.current_price = ws_price
             else:
                 self.current_price = self.client.get_symbol_price(self.symbol)
+
+            # 異常価格（Testnetスパイク/0価格）を検知してスキップ
+            if not self._validate_price(self.current_price):
+                return
+
             self.strategy.update_current_price(self.current_price)
 
             if self.risk_manager.should_halt_trading(self.current_price):
@@ -160,8 +194,14 @@ class GridBot:
 
             now = time.time()
             if now - self._last_status_time >= Settings.STATUS_DISPLAY_INTERVAL:
-                self._display_status()
+                self._display_status(detail=False)
                 self._last_status_time = now
+
+            # 詳細ステータスは5分間隔
+            detail_interval = max(Settings.STATUS_DISPLAY_INTERVAL * 5, 300)
+            if now - self._last_detail_time >= detail_interval:
+                self._display_status(detail=True)
+                self._last_detail_time = now
 
             if now - self._last_persist_time >= Settings.PERSIST_INTERVAL:
                 self._persist_state()
@@ -266,14 +306,16 @@ class GridBot:
             "unrealized_profit": stats.unrealized_profit,
         }
 
-    def _display_status(self):
-        """ステータスを表示"""
+    def _display_status(self, detail=False):
+        """ステータスを表示（detail=Trueで詳細版）"""
         stats = self.portfolio.refresh_stats()
         logger.info(
             f"価格={self.current_price:.2f} "
             f"ポジション={sum(1 for g in self.strategy.grids if g.position_filled)} "
             f"利益={stats.total_profit:+.2f}"
         )
+        if not detail:
+            return
         gs = self.strategy.grid_status
         rs = self.risk_manager.risk_status
         q = self.portfolio.quote_asset

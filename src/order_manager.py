@@ -329,17 +329,9 @@ class OrderManager:
         avg_price = float(order.get("avgPrice") or order["price"])
         executed_qty = float(order.get("executedQty") or order["origQty"])
 
-        self.register_order(
-            order_id=order["orderId"],
-            grid_level=grid_level,
-            side=side,
-            price=avg_price,
-            quantity=executed_qty,
-            status=order["status"],
-        )
-
         grid = self.strategy.grids[grid_level]
         if order["status"] == "FILLED":
+            # 即約定は _active_orders に入れない（二重処理防止）
             if side == "BUY":
                 self.strategy.mark_position_filled(grid_level, order["orderId"])
                 grid.filled_quantity = executed_qty
@@ -347,6 +339,14 @@ class OrderManager:
                 self.strategy.mark_position_closed(grid_level, order["orderId"])
             logger.info(f"グリッド {grid_level}: 即約定 @ {avg_price}")
         else:
+            self.register_order(
+                order_id=order["orderId"],
+                grid_level=grid_level,
+                side=side,
+                price=avg_price,
+                quantity=executed_qty,
+                status=order["status"],
+            )
             if side == "BUY":
                 grid.buy_order_id = order["orderId"]
             else:
