@@ -17,6 +17,8 @@ logger = setup_logger("order_manager")
 
 def _adjust_price(price: float, tick_size: float, side: str = "BUY") -> float:
     """価格をtick_sizeの倍数に調整（BUY: 切り下げ, SELL: 切り上げ）"""
+    if tick_size <= 0:
+        return price
     if side == "BUY":
         return math.floor(round(price / tick_size, 10)) * tick_size
     return math.ceil(round(price / tick_size, 10)) * tick_size
