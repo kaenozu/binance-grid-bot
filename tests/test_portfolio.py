@@ -267,3 +267,31 @@ class TestPortfolio:
             )
         history = portfolio.get_trade_history()
         assert len(history) == 5
+
+    def test_max_drawdown_tracked(self, portfolio):
+        """最大ドローダウンが正しく追跡される"""
+        portfolio.record_trade("BUY", 100.0, 0.1, 1, 0)
+        portfolio.record_trade("SELL", 105.0, 0.1, 2, 0)
+        portfolio.record_trade("BUY", 106.0, 0.1, 3, 1)
+        portfolio.record_trade("SELL", 101.0, 0.1, 4, 1)
+        portfolio.calculate_unrealized_pnl(100.0)
+        assert portfolio.stats.peak_balance > 0
+        assert portfolio.stats.max_drawdown >= 0
+
+    def test_monthly_yearly_profit_tracked(self, portfolio):
+        """月次/年次利益が正しく追跡される"""
+        portfolio.record_trade("BUY", 100.0, 0.1, 1, 0)
+        portfolio.record_trade("SELL", 105.0, 0.1, 2, 0)
+        assert len(portfolio.stats.monthly_profit) > 0
+        assert len(portfolio.stats.yearly_profit) > 0
+
+    def test_sharpe_ratio_zero_without_trades(self, portfolio):
+        """約定なしではシャープレシオが0"""
+        portfolio.calculate_unrealized_pnl(BASE_PRICE)
+        assert portfolio.stats.sharpe_ratio == 0.0
+
+    def test_peak_balance_starts_at_zero(self, portfolio):
+        """初期ピーク残高は0"""
+        assert portfolio.stats.peak_balance == 0.0
+        assert portfolio.stats.max_drawdown == 0.0
+        assert portfolio.stats.max_drawdown_pct == 0.0
