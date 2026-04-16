@@ -60,23 +60,18 @@ class RiskManager:
         """損切り価格を更新（スレッドセーフ）
 
         Args:
-            new_lower_price: 新しいグリッド下限価格
+            new_lower_price: 新しいグリッド下限価格。0以下の場合は何もしない。
         """
+        if new_lower_price <= 0:
+            logger.warning(f"損切り更新スキップ: 下限価格が無効 ({new_lower_price})")
+            return
         with self._lock:
             self._stop_loss_price = new_lower_price * (1 - Settings.STOP_LOSS_PERCENTAGE / 100)
             logger.info(f"損切り価格更新: {self._stop_loss_price:.2f}")
 
     def check_stop_loss(self, current_price: float) -> bool:
-        """損切りラインをチェック
-
-        Args:
-            current_price: 現在価格
-
-        Returns:
-            True: 損切り発動、False: 正常
-        """
-        with self._lock:
-            sl_price = self._stop_loss_price
+        """損切りラインをチェック"""
+        sl_price = self.stop_loss_price
         if current_price <= sl_price:
             logger.warning(
                 f"[STOP_LOSS] 損切り発動! 現在価格: {current_price:.2f}, 損切り価格: {sl_price:.2f}"

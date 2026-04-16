@@ -177,3 +177,49 @@ class TestBoundaryChecks:
 
         rm.update_trailing_stop(current_price=50000.0, trailing_percent=-5.0)
         assert rm.stop_loss_price == original_sl
+
+    def test_update_grid_range_clamps_negative_lower(self):
+        """下限が負になる場合は0に補正"""
+        strategy = GridStrategy(
+            symbol="BTCUSDT",
+            current_price=100.0,
+            lower_price=50.0,
+            upper_price=150.0,
+            grid_count=5,
+            investment_amount=1000.0,
+        )
+        # ATR=200, multiplier=2 → range_width=400 → lower = 100 - 200 = -100
+        strategy.update_grid_range_by_volatility(current_atr=200.0, multiplier=2.0)
+        assert strategy.lower_price >= 0
+
+    def test_max_drawdown_pct_tracks_max(self):
+        """max_drawdown_pct は履歴最大を保持し、回復後も下がらない"""
+        from datetime import datetime
+        from unittest.mock import MagicMock
+
+        from src.portfolio import Portfolio, Trade
+
+        client = MagicMock()
+        client.get_account_balance.return_value = {"USDT": {"free": 10000.0, "locked": 0}}
+
+        pf = Portfolio(client, "BTCUSDT", fee_rate=0.001)
+        pf.stats.initial_balance = 10000.0
+        pf.stats.current_balance = 10000.0
+        pf.stats.peak_balance = 10000.0
+        pf.stats.start_time = None  # シャープ計算スキップ
+
+        # 未実現損益を発生させるBUYトレード
+        pf.trades.append(Trade(
+            timestamp=datetime.now(), symbol="BTCUSDT", side="BUY",
+            price=9500.0, quantity=1.0, order_id=1, grid_level=0,
+        ))
+
+        # 価格下落でDD発生
+        pf.calculate_unrealized_pnl(current_price=8500.0)
+        assert pf.stats.max_drawdown_pct > 0
+        peak_dd_pct = pf.stats.max_drawdown_pct
+
+        # 価格回復
+        pf.calculate_unrealized_pnl(current_price=10000.0)
+        # max_drawdown_pct は履歴最大を保持（下がらない）
+        assert pf.stats.max_drawdown_pct == peak_dd_pct

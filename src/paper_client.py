@@ -10,6 +10,9 @@ import time as _time
 import requests as requests_lib
 
 from src.binance_client import BinanceAPIError
+from utils.logger import setup_logger
+
+logger = setup_logger("paper_client")
 
 
 class PaperClient:
@@ -191,8 +194,8 @@ class PaperClient:
             order["avgPrice"] = order["price"]
             order["executedQty"] = order["origQty"]
             self._settle_order(order, base, quote, limit_price)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"自動フィル失敗: {e}")
 
     def _get_cached_price(self, symbol: str) -> float:
         """キャッシュから価格を返す（なければAPI取得）"""

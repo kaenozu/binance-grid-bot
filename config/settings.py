@@ -86,4 +86,13 @@ class Settings:
         if cls.MAX_POSITIONS < 1:
             errors.append("MAX_POSITIONS は 1 以上である必要があります")
 
+        if cls.GRID_RANGE_FACTOR <= 0 or cls.GRID_RANGE_FACTOR > 1:
+            errors.append("GRID_RANGE_FACTOR は 0-1 の範囲である必要があります")
+
+        if cls.CHECK_INTERVAL < 1:
+            errors.append("CHECK_INTERVAL は 1 以上である必要があります")
+
+        if cls.TRADING_FEE_RATE < 0:
+            errors.append("TRADING_FEE_RATE は 0 以上である必要があります")
+
         return errors

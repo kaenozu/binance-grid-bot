@@ -51,8 +51,7 @@ def _ensure_db():
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         _connection = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False)
         _connection.row_factory = sqlite3.Row
-        try:
-            _connection.execute("""
+        _connection.execute("""
                 CREATE TABLE IF NOT EXISTS trades (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp TEXT NOT NULL,
@@ -66,7 +65,7 @@ def _ensure_db():
                     matched INTEGER NOT NULL DEFAULT 0
                 )
             """)
-            _connection.execute("""
+        _connection.execute("""
                 CREATE TABLE IF NOT EXISTS grid_states (
                     symbol TEXT NOT NULL,
                     grid_level INTEGER NOT NULL,
@@ -78,7 +77,7 @@ def _ensure_db():
                     PRIMARY KEY (symbol, grid_level)
                 )
             """)
-            _connection.execute("""
+        _connection.execute("""
                 CREATE TABLE IF NOT EXISTS portfolio_stats (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     initial_balance REAL DEFAULT 0,
@@ -103,9 +102,7 @@ def _ensure_db():
                     yearly_profit TEXT DEFAULT '{}'
                 )
             """)
-            _connection.commit()
-        finally:
-            pass
+        _connection.commit()
         _db_initialized = True
         logger.info(f"DB初期化完了: {DB_PATH}")
 
