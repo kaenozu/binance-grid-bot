@@ -2,6 +2,7 @@
 
 import pytest
 
+from config.settings import Settings
 from src.grid_strategy import GridStrategy
 from tests.conftest import BASE_PRICE, LOWER_PRICE, UPPER_PRICE
 
@@ -37,7 +38,7 @@ def test_shift_grids_auto(strategy):
     new_price = BASE_PRICE + SPACING * 3
     strategy.update_current_price(new_price)
     strategy.shift_grids()
-    range_factor = 0.08
+    range_factor = Settings.GRID_RANGE_FACTOR
     assert abs(strategy.lower_price - new_price * (1 - range_factor)) < 0.01
     assert abs(strategy.upper_price - new_price * (1 + range_factor)) < 0.01
     filled_grids = [g for g in strategy.grids if g.position_filled]
@@ -46,9 +47,7 @@ def test_shift_grids_auto(strategy):
 
 
 def test_shift_preserves_unfilled(strategy):
-    strategy.shift_grids(
-        new_lower=LOWER_PRICE + SPACING, new_upper=UPPER_PRICE + SPACING
-    )
+    strategy.shift_grids(new_lower=LOWER_PRICE + SPACING, new_upper=UPPER_PRICE + SPACING)
     assert strategy.grids[0].position_filled is False
     assert strategy.grids[9].position_filled is False
 

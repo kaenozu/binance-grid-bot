@@ -1,5 +1,6 @@
 """グリッド取引戦略のテスト"""
 
+from config.settings import Settings
 from src.grid_strategy import GridStrategy
 from tests.conftest import BASE_PRICE, LOWER_PRICE, UPPER_PRICE
 
@@ -29,9 +30,7 @@ class TestGridStrategy:
         assert grid_strategy.grids[9].sell_price is None
 
     def test_order_quantity(self, grid_strategy):
-        qty = grid_strategy.get_order_quantity(
-            BASE_PRICE, min_qty=0.00001, step_size=0.00001
-        )
+        qty = grid_strategy.get_order_quantity(BASE_PRICE, min_qty=0.00001, step_size=0.00001)
         assert qty > 0
 
     def test_order_quantity_respects_min_qty(self, grid_strategy):
@@ -88,9 +87,11 @@ class TestGridStrategy:
             grid_count=10,
             investment_amount=1000.0,
         )
-        assert strategy.lower_price == 92000.0
-        assert abs(strategy.upper_price - 108000.0) < 0.01
-
+        factor = Settings.GRID_RANGE_FACTOR
+        expected_lower = 100000.0 * (1 - factor)
+        expected_upper = 100000.0 * (1 + factor)
+        assert strategy.lower_price == expected_lower
+        assert abs(strategy.upper_price - expected_upper) < 0.01
 
     def test_profit_per_grid_percent(self, grid_strategy):
         pct = grid_strategy.profit_per_grid_percent
