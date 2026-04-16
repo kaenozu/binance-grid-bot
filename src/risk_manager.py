@@ -135,3 +135,19 @@ class RiskManager:
             return self.halt_on_out_of_range
 
         return False
+
+    def update_trailing_stop(self, current_price: float, trailing_percent: float = 2.0):
+        """トレーリングストップを更新
+
+        価格上昇に合わせて損切りラインを自動的に引き上げる。
+        これにより、利益を確保しつつドローダウンを抑制できる。
+
+        Args:
+            current_price: 現在価格
+            trailing_percent: トレーリング幅（%）。デフォルト2.0
+        """
+        with self._lock:
+            new_sl = current_price * (1 - trailing_percent / 100)
+            if new_sl > self._stop_loss_price:
+                self._stop_loss_price = new_sl
+                logger.info(f"トレーリングストップ更新: {self._stop_loss_price:.2f}")
