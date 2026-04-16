@@ -160,13 +160,7 @@ class GridBot:
     def _tick(self) -> None:
         """1 ティック処理"""
         try:
-            ws_price = self.ws_client.current_price if self.ws_client else None
-            if ws_price is not None:
-                self.current_price = ws_price
-            else:
-                self.current_price = self.client.get_symbol_price(self.symbol)
-            self.strategy.update_current_price(self.current_price)
-
+            self._update_price()
             if self.risk_manager.should_halt_trading(self.current_price):
                 logger.warning("リスク管理により取引を停止します")
                 self._emergency_stop()
@@ -177,14 +171,7 @@ class GridBot:
             self.portfolio.calculate_unrealized_pnl(self.current_price)
             self.consecutive_errors = 0
 
-            now = time.time()
-            if now - self._last_status_time >= Settings.STATUS_DISPLAY_INTERVAL:
-                self._display_status()
-                self._last_status_time = now
-
-            if now - self._last_persist_time >= Settings.PERSIST_INTERVAL:
-                self._persist_state()
-                self._last_persist_time = now
+            self._handle_periodic_tasks()
 
             if not self.strategy.is_within_grid_range(self.current_price):
                 self._handle_grid_shift()
@@ -202,6 +189,26 @@ class GridBot:
                     f"連続エラーが{Settings.MAX_CONSECUTIVE_ERRORS}回に到達。ボットを停止します。"
                 )
                 self.stop()
+
+    def _update_price(self):
+        """現在価格を更新"""
+        ws_price = self.ws_client.current_price if self.ws_client else None
+        if ws_price is not None:
+            self.current_price = ws_price
+        else:
+            self.current_price = self.client.get_symbol_price(self.symbol)
+        self.strategy.update_current_price(self.current_price)
+
+    def _handle_periodic_tasks(self):
+        """定期実行タスク（ステータス表示、永続化）"""
+        now = time.time()
+        if now - self._last_status_time >= Settings.STATUS_DISPLAY_INTERVAL:
+            self._display_status()
+            self._last_status_time = now
+
+        if now - self._last_persist_time >= Settings.PERSIST_INTERVAL:
+            self._persist_state()
+            self._last_persist_time = now
 
     def _process_fills(self):
         """約定イベントを処理"""
