@@ -100,24 +100,25 @@ class BacktestEngine:
             grid_count=self.grid_count,
             investment_amount=self.investment_amount,
         )
-        self._place_initial_orders()
+        strategy = self.strategy
+        assert strategy is not None
 
         peak_value = self.investment_amount
         stop_loss_price = lower * (1 - self.stop_loss_percent / 100)
 
         for i, kline in enumerate(klines[1:], 1):
             current_price = kline["close"]
-            self.strategy.update_current_price(current_price)
+            strategy.update_current_price(current_price)
 
             if current_price <= stop_loss_price:
                 self.stop_loss_triggered = True
                 logger.info(f"損切り発動: {i}番目のK線 @ {current_price:.2f}")
                 break
 
-            if not self.strategy.is_within_grid_range(current_price):
+            if not strategy.is_within_grid_range(current_price):
                 continue
 
-            self._check_fills(kline)
+            self._check_fills(kline, strategy)
             current_value = self._calculate_portfolio_value(current_price)
             peak_value = max(peak_value, current_value)
 
@@ -125,7 +126,7 @@ class BacktestEngine:
                 drawdown = (peak_value - current_value) / peak_value * 100
                 self.max_drawdown = max(self.max_drawdown, drawdown)
 
-        return self._generate_report(klines)
+        return self._generate_report(klines, strategy)
 
     def _resolve_range(self, initial_price: float) -> tuple[float, float]:
         """グリッド範囲を解決"""
@@ -134,11 +135,7 @@ class BacktestEngine:
         upper = self.upper_price if self.upper_price else initial_price * (1 + factor)
         return lower, upper
 
-    def _place_initial_orders(self):
-        for grid in self.strategy.get_active_buy_grids():
-            self.buy_orders[grid.level] = grid.buy_price
-
-    def _check_fills(self, kline: dict):
+    def _check_fills(self, kline: dict, strategy: GridStrategy):
         """K線のhigh/lowを使って約定をチェック
 
         同一K線内で買い→売りの連続約定を防止するため、
@@ -147,14 +144,14 @@ class BacktestEngine:
         high, low = kline["high"], kline["low"]
         filled_this_kline: set[int] = set()
 
-        for grid in self.strategy.grids:
+        for grid in strategy.grids:
             if grid.level in filled_this_kline:
                 continue
 
             # 買い約定チェック
             if grid.level in self.buy_orders and grid.level not in self.positions:
                 if low <= grid.buy_price:
-                    quantity = self.strategy.get_order_quantity(
+                    quantity = strategy.get_order_quantity(
                         grid.buy_price,
                         min_qty=self.min_qty,
                         step_size=self.step_size,
@@ -193,8 +190,10 @@ class BacktestEngine:
         asset_value = sum(positions.values()) * current_price - buy_fees - sell_fees
         return cash + asset_value + self.total_profit
 
-    def _generate_report(self, klines: list[dict]) -> dict:
-        start_price, end_price = klines[0]["close"], klines[-1]["close"]
+    def _generate_report(self, klines: list[dict], strategy: GridStrategy) -> dict:
+        """レポートを生成"""
+        start_price = klines[0]["close"]
+        end_price = klines[-1]["close"]
         price_change = (end_price - start_price) / start_price * 100
         final_value = self._calculate_portfolio_value(end_price)
         roi = (final_value - self.investment_amount) / self.investment_amount * 100
@@ -207,7 +206,7 @@ class BacktestEngine:
             "end_price": end_price,
             "price_change_percent": price_change,
             "grid_count": self.grid_count,
-            "grid_range": f"{self.strategy.lower_price:.2f} - {self.strategy.upper_price:.2f}",
+            "grid_range": f"{strategy.lower_price:.2f} - {strategy.upper_price:.2f}",
             "total_trades": self.total_trades,
             "total_profit": self.total_profit,
             "roi_percent": roi,
