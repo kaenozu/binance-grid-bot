@@ -161,34 +161,51 @@ class GridBot:
         """1 ティック処理"""
         try:
             self._update_price()
-            if self.risk_manager.should_halt_trading(self.current_price):
-                logger.warning("リスク管理により取引を停止します")
-                self._emergency_stop()
-                self.consecutive_errors = 0
+            if self._check_halt_conditions():
                 return
 
-            self._process_fills()
-            self.portfolio.calculate_unrealized_pnl(self.current_price)
-            self.consecutive_errors = 0
-
-            self._handle_periodic_tasks()
-
-            if not self.strategy.is_within_grid_range(self.current_price):
-                self._handle_grid_shift()
+            self._execute_trading_logic()
+            self._run_maintenance_tasks()
 
         except Exception as e:
-            self.consecutive_errors += 1
-            logger.error(
-                f"ティック処理エラー ({self.consecutive_errors}/"
-                f"{Settings.MAX_CONSECUTIVE_ERRORS}): {e}"
-            )
-            logger.error(f"スタックトレース:\n{traceback.format_exc()}")
+            self._handle_tick_error(e)
 
-            if self.consecutive_errors >= Settings.MAX_CONSECUTIVE_ERRORS:
-                logger.critical(
-                    f"連続エラーが{Settings.MAX_CONSECUTIVE_ERRORS}回に到達。ボットを停止します。"
-                )
-                self.stop()
+    def _check_halt_conditions(self) -> bool:
+        """取引停止条件のチェック"""
+        if self.risk_manager.should_halt_trading(self.current_price):
+            logger.warning("リスク管理により取引を停止します")
+            self._emergency_stop()
+            self.consecutive_errors = 0
+            return True
+        return False
+
+    def _execute_trading_logic(self) -> None:
+        """取引実行ロジックの管理"""
+        self._process_fills()
+        self.portfolio.calculate_unrealized_pnl(self.current_price)
+        self.consecutive_errors = 0
+
+        if not self.strategy.is_within_grid_range(self.current_price):
+            self._handle_grid_shift()
+
+    def _run_maintenance_tasks(self) -> None:
+        """定期メンテナンスの実行"""
+        self._handle_periodic_tasks()
+
+    def _handle_tick_error(self, e: Exception) -> None:
+        """ティック処理エラーのハンドリング"""
+        self.consecutive_errors += 1
+        logger.error(
+            f"ティック処理エラー ({self.consecutive_errors}/"
+            f"{Settings.MAX_CONSECUTIVE_ERRORS}): {e}"
+        )
+        logger.error(f"スタックトレース:\n{traceback.format_exc()}")
+
+        if self.consecutive_errors >= Settings.MAX_CONSECUTIVE_ERRORS:
+            logger.critical(
+                f"連続エラーが{Settings.MAX_CONSECUTIVE_ERRORS}回に到達。ボットを停止します。"
+            )
+            self.stop()
 
     def _update_price(self):
         """現在価格を更新"""
