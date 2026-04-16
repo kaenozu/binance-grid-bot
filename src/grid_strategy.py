@@ -128,13 +128,8 @@ class GridStrategy:
 
     def get_active_buy_grids(self) -> list[GridLevel]:
         """買い注文を配置すべきグリッド（未ポジション、sell_priceあり、現在価格以下）"""
-        return [
-            g
-            for g in self.grids
-            if g.buy_price <= self.current_price
-            and not g.position_filled
-            and g.sell_price is not None
-        ]
+        return [g for g in self.grids if g.buy_price <= self.current_price
+            and not g.position_filled and g.sell_price is not None]
 
     def get_active_sell_grids(self) -> list[GridLevel]:
         """売り注文を配置すべきグリッド（ポジション持ち、sell_priceあり）"""
@@ -237,9 +232,14 @@ class GridStrategy:
         既存の約定済みポジションは新しいグリッドに引き継がれる。
 
         Args:
-            current_atr: 現在のATR（平均真のレンジ）
-            multiplier: ATRにかける係数（デフォルト2.0）
+            current_atr: 現在のATR（平均真のレンジ）。0以下の場合は何もしない。
+            multiplier: ATRにかける係数（デフォルト2.0）。0以下の場合は何もしない。
         """
+        if current_atr <= 0 or multiplier <= 0:
+            logger.warning(
+                f"ボラティリティ調整スキップ: ATR={current_atr}, multiplier={multiplier}"
+            )
+            return
         filled_positions = [
             (g.buy_price, g.buy_order_id, g.filled_quantity, g.sell_price)
             for g in self.grids

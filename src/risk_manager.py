@@ -144,8 +144,11 @@ class RiskManager:
 
         Args:
             current_price: 現在価格
-            trailing_percent: トレーリング幅（%）。デフォルト2.0
+            trailing_percent: トレーリング幅（%）。デフォルト2.0。0以下の場合は何もしない。
         """
+        if trailing_percent <= 0:
+            logger.warning(f"トレーリング幅が無効: {trailing_percent}%。スキップします。")
+            return
         with self._lock:
             new_sl = current_price * (1 - trailing_percent / 100)
             if new_sl > self._stop_loss_price:

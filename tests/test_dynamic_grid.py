@@ -115,3 +115,65 @@ class TestAdaptiveGridAndTrailingStop:
         # 価格下落
         rm.update_trailing_stop(current_price=30000.0, trailing_percent=2.0)
         assert rm.stop_loss_price == initial_sl
+
+
+class TestBoundaryChecks:
+    """境界値チェックのテスト"""
+
+    def test_update_grid_range_skips_zero_atr(self):
+        """ATR=0の場合は範囲調整をスキップ"""
+        strategy = GridStrategy(
+            symbol="BTCUSDT",
+            current_price=50000.0,
+            lower_price=40000.0,
+            upper_price=60000.0,
+            grid_count=10,
+            investment_amount=10000.0,
+        )
+        original_lower = strategy.lower_price
+        original_upper = strategy.upper_price
+
+        strategy.update_grid_range_by_volatility(current_atr=0.0)
+        assert strategy.lower_price == original_lower
+        assert strategy.upper_price == original_upper
+
+    def test_update_grid_range_skips_negative_multiplier(self):
+        """multiplier<0の場合は範囲調整をスキップ"""
+        strategy = GridStrategy(
+            symbol="BTCUSDT",
+            current_price=50000.0,
+            lower_price=40000.0,
+            upper_price=60000.0,
+            grid_count=10,
+            investment_amount=10000.0,
+        )
+        original_lower = strategy.lower_price
+
+        strategy.update_grid_range_by_volatility(current_atr=1000.0, multiplier=-1.0)
+        assert strategy.lower_price == original_lower
+
+    def test_trailing_stop_skips_zero_percent(self):
+        """trailing_percent=0の場合はスキップ"""
+        from unittest.mock import MagicMock
+        mock_client = MagicMock()
+        mock_strategy = MagicMock()
+        mock_strategy.lower_price = 40000.0
+
+        rm = RiskManager(mock_client, mock_strategy)
+        original_sl = rm.stop_loss_price
+
+        rm.update_trailing_stop(current_price=50000.0, trailing_percent=0.0)
+        assert rm.stop_loss_price == original_sl
+
+    def test_trailing_stop_skips_negative_percent(self):
+        """trailing_percent<0の場合はスキップ（損切りが下がらない）"""
+        from unittest.mock import MagicMock
+        mock_client = MagicMock()
+        mock_strategy = MagicMock()
+        mock_strategy.lower_price = 40000.0
+
+        rm = RiskManager(mock_client, mock_strategy)
+        original_sl = rm.stop_loss_price
+
+        rm.update_trailing_stop(current_price=50000.0, trailing_percent=-5.0)
+        assert rm.stop_loss_price == original_sl
