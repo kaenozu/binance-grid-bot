@@ -235,8 +235,15 @@ class GridStrategy:
 
     def update_grid_range_by_volatility(self, current_atr: float, multiplier: float = 2.0):
         """ボラティリティに基づいてグリッド範囲を調整"""
+        filled_positions = [
+            (g.buy_price, g.buy_order_id, g.filled_quantity, g.sell_price)
+            for g in self.grids
+            if g.position_filled
+        ]
         range_width = current_atr * multiplier
         self.lower_price = self.current_price - range_width / 2
         self.upper_price = self.current_price + range_width / 2
         logger.info(f"ボラティリティ調整: 新範囲 {self.lower_price:.2f} - {self.upper_price:.2f}")
         self._calculate_grids()
+        if filled_positions:
+            self._remap_positions(filled_positions)

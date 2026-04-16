@@ -105,6 +105,10 @@ class BacktestEngine:
         strategy = self.strategy
         assert strategy is not None
 
+        # 初期グリッドの買い注文をbuy_ordersに登録
+        for grid in strategy.get_active_buy_grids():
+            self.buy_orders[grid.level] = grid.buy_price
+
         peak_value = self.investment_amount
         stop_loss_price = lower * (1 - self.stop_loss_percent / 100)
 

@@ -71,6 +71,24 @@ class RiskManager:
                 self._stop_loss_price = new_sl
                 logger.info(f"トレーリングストップ更新: {self._stop_loss_price:.2f}")
 
+    def check_stop_loss(self, current_price: float) -> bool:
+        """損切りラインをチェック
+
+        Args:
+            current_price: 現在価格
+
+        Returns:
+            True: 損切り発動、False: 正常
+        """
+        with self._lock:
+            sl_price = self._stop_loss_price
+        if current_price <= sl_price:
+            logger.warning(
+                f"[STOP_LOSS] 損切り発動! 現在価格: {current_price:.2f}, 損切り価格: {sl_price:.2f}"
+            )
+            return True
+        return False
+
     def can_open_position(self) -> bool:
         with self._lock:
             if self.current_positions >= self.max_positions:

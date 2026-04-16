@@ -126,23 +126,23 @@ def save_trade(
 def save_grid_states(symbol: str, grids: list):
     conn = _get_connection()
     try:
-        conn.execute("DELETE FROM grid_states WHERE symbol = ?", (symbol,))
-        for g in grids:
-            conn.execute(
-                "INSERT INTO grid_states "
-                "(symbol, grid_level, buy_price, sell_price, buy_order_id, "
-                "sell_order_id, position_filled) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    symbol,
-                    g.level,
-                    g.buy_price,
-                    json.dumps(g.sell_price) if g.sell_price is not None else None,
-                    g.buy_order_id,
-                    g.sell_order_id,
-                    int(g.position_filled),
-                ),
-            )
-        conn.commit()
+        with conn:
+            conn.execute("DELETE FROM grid_states WHERE symbol = ?", (symbol,))
+            for g in grids:
+                conn.execute(
+                    "INSERT INTO grid_states "
+                    "(symbol, grid_level, buy_price, sell_price, buy_order_id, "
+                    "sell_order_id, position_filled) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        symbol,
+                        g.level,
+                        g.buy_price,
+                        json.dumps(g.sell_price) if g.sell_price is not None else None,
+                        g.buy_order_id,
+                        g.sell_order_id,
+                        int(g.position_filled),
+                    ),
+                )
     finally:
         conn.close()
 

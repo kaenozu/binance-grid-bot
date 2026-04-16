@@ -69,8 +69,6 @@ def sync_with_exchange(order_manager, strategy) -> tuple[int, int]:
 
     return registered, removed
 
-    return registered, removed
-
 
 def _match_order_to_grid(price: float, strategy, side: str) -> int | None:
     """注文価格に最も近いグリッドレベルを返す"""
