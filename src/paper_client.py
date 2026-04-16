@@ -5,6 +5,8 @@
 関連ファイル: binance_client.py（本番クライアント）, bot.py（メインループ）
 """
 
+import time as _time
+
 import requests as requests_lib
 
 from src.binance_client import BinanceAPIError
@@ -40,7 +42,6 @@ class PaperClient:
         return dict(self._balances)
 
     def get_symbol_price(self, symbol: str) -> float:
-        import time as _time
         now = _time.time()
         if symbol in self._price_cache:
             cached_price, cached_time = self._price_cache[symbol]

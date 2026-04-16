@@ -209,9 +209,9 @@ def save_portfolio_stats(stats):
 
 
 def load_grid_states(symbol: str) -> list[dict] | None:
-    if not DB_PATH.exists():
-        return None
     with _db_lock:
+        if not DB_PATH.exists():
+            return None
         conn = _get_connection()
         rows = conn.execute(
             "SELECT grid_level, buy_price, sell_price, buy_order_id, "
@@ -235,9 +235,9 @@ def load_grid_states(symbol: str) -> list[dict] | None:
 
 
 def load_portfolio_stats() -> dict | None:
-    if not DB_PATH.exists():
-        return None
     with _db_lock:
+        if not DB_PATH.exists():
+            return None
         conn = _get_connection()
         rows = conn.execute("SELECT * FROM portfolio_stats WHERE id = 1").fetchall()
     if not rows:
@@ -273,9 +273,9 @@ def update_trade_matched(order_id: int, matched: bool):
 
 
 def load_trades() -> list[dict]:
-    if not DB_PATH.exists():
-        return []
     with _db_lock:
+        if not DB_PATH.exists():
+            return []
         conn = _get_connection()
         rows = conn.execute(
             "SELECT timestamp, symbol, side, price, quantity, "

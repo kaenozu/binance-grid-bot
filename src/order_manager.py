@@ -205,7 +205,10 @@ class OrderManager:
             if grid.position_filled:
                 continue
             try:
-                if self._place_order(grid.level, "BUY", grid.buy_price, symbol_info=symbol_info) is not None:
+                result = self._place_order(
+                    grid.level, "BUY", grid.buy_price, symbol_info=symbol_info
+                )
+                if result is not None:
                     placed_count += 1
                 else:
                     logger.warning(f"グリッド {grid.level}: 買い注文スキップ（数量無効）")
@@ -222,7 +225,11 @@ class OrderManager:
             try:
                 quantity = self._resolve_sell_quantity(grid, symbol_info)
                 if grid.sell_price is not None:
-                    if self._place_order(grid.level, "SELL", grid.sell_price, quantity, symbol_info=symbol_info) is not None:
+                    result = self._place_order(
+                        grid.level, "SELL", grid.sell_price, quantity,
+                        symbol_info=symbol_info,
+                    )
+                    if result is not None:
                         placed_count += 1
             except Exception as e:
                 errors.append(f"グリッド {grid.level} 売り注文失敗: {e}")
