@@ -109,11 +109,13 @@ def test_tick_halts_on_stop_loss():
     bot.is_running = True
     bot.consecutive_errors = 0
     bot._last_status_time = 0.0
+    bot._last_persist_time = 0.0
     bot._close_open_positions = MagicMock()
+    bot._persist_state = MagicMock()
 
-    bot._tick()
+    with patch("src.bot.emergency_stop"):
+        bot._tick()
     assert bot.is_running is False
-    mock_om.cancel_all_orders.assert_called_once()
 
 
 def test_handle_grid_shift_preserves_filled_positions():

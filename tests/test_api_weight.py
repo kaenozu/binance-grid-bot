@@ -2,6 +2,7 @@
 
 import threading
 import time
+from unittest.mock import patch
 
 import pytest
 
@@ -26,13 +27,15 @@ class TestAPIWeightTracker:
 
     @pytest.mark.slow
     def test_window_reset(self):
-        """window_seconds=1 秒のresetをテスト。sleep必要。"""
-        tracker = APIWeightTracker(max_weight=1200, weight_buffer=200, window_seconds=1)
-        tracker.update_weight(1000)
-        assert tracker.available_weight == 0
+        """window_seconds のリセットをモック時間でテスト。"""
+        with patch.object(time, "time", return_value=100.0):
+            tracker = APIWeightTracker(max_weight=1200, weight_buffer=200, window_seconds=1)
+            tracker.update_weight(1000)
+            assert tracker.available_weight == 0
 
-        time.sleep(1.1)
-        tracker.update_weight(50)
+        # 時間経過後にリセットされることを確認
+        with patch.object(time, "time", return_value=101.5):
+            tracker.update_weight(50)
         assert tracker.available_weight == 950
 
     def test_wait_if_needed_resets_weight(self):
@@ -40,7 +43,9 @@ class TestAPIWeightTracker:
         tracker.update_weight(1001)
         assert tracker.should_wait()
 
-        tracker.wait_if_needed()
+        # wait_if_neededの待機をモック
+        with patch.object(tracker._condition, "wait"):
+            tracker.wait_if_needed()
         assert tracker._current_weight == 0
 
     def test_thread_safety(self):

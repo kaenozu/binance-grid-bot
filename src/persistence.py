@@ -19,7 +19,7 @@ logger = setup_logger("persistence")
 
 DB_PATH = Path("data") / "bot_state.db"
 _db_initialized = False
-_db_lock = threading.Lock()
+_db_lock = threading.RLock()
 _connection: sqlite3.Connection | None = None
 _TEST_MODE = False
 
