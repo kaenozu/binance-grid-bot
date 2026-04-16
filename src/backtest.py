@@ -62,6 +62,7 @@ class BacktestEngine:
         step_size: float = DEFAULT_STEP_SIZE,
         min_notional: float = DEFAULT_MIN_NOTIONAL,
         fee_rate: float = DEFAULT_FEE_RATE,
+        slippage_rate: float = 0.0005,  # 0.05%
     ):
         self.symbol = symbol
         self.investment_amount = investment_amount
@@ -73,6 +74,7 @@ class BacktestEngine:
         self.step_size = step_size
         self.min_notional = min_notional
         self.fee_rate = fee_rate
+        self.slippage_rate = slippage_rate
 
         self.strategy: GridStrategy | None = None
 
