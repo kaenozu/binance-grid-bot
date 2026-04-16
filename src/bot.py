@@ -84,7 +84,11 @@ class GridBot:
 
         # 前回価格との変動率チェック（50%超は異常）
         prev_price = self.strategy.current_price
-        if isinstance(prev_price, (int, float)) and prev_price > 0 and abs(price - prev_price) / prev_price > 0.5:
+        if (
+            isinstance(prev_price, (int, float))
+            and prev_price > 0
+            and abs(price - prev_price) / prev_price > 0.5
+        ):
             logger.warning(
                 f"異常な価格変動を検知: {prev_price:.2f} -> {price:.2f} "
                 f"({abs(price - prev_price) / prev_price * 100:.1f}%). スキップします。"
