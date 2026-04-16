@@ -94,7 +94,13 @@ def _ensure_db():
                     avg_profit_per_trade REAL DEFAULT 0,
                     total_fees REAL DEFAULT 0,
                     start_time TEXT,
-                    last_update TEXT
+                    last_update TEXT,
+                    peak_balance REAL DEFAULT 0,
+                    max_drawdown REAL DEFAULT 0,
+                    max_drawdown_pct REAL DEFAULT 0,
+                    sharpe_ratio REAL DEFAULT 0,
+                    monthly_profit TEXT DEFAULT '{}',
+                    yearly_profit TEXT DEFAULT '{}'
                 )
             """)
             _connection.commit()
@@ -180,6 +186,11 @@ def save_grid_states(symbol: str, grids: list):
 def save_portfolio_stats(stats):
     with _db_lock:
         conn = _get_connection()
+        import json
+        mp = getattr(stats, 'monthly_profit', {})
+        monthly_json = json.dumps(mp)
+        yp = getattr(stats, 'yearly_profit', {})
+        yearly_json = json.dumps(yp)
         with conn:
             conn.execute("DELETE FROM portfolio_stats WHERE id = 1")
             conn.execute(
@@ -187,8 +198,9 @@ def save_portfolio_stats(stats):
                 "(id, initial_balance, current_balance, total_profit, realized_profit, "
                 "unrealized_profit, total_trades, winning_trades, losing_trades, "
                 "settled_trades, win_rate, avg_profit_per_trade, total_fees, "
-                "start_time, last_update) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, "
-                "?, ?, ?, ?, ?, ?)",
+                "start_time, last_update, peak_balance, max_drawdown, "
+                "max_drawdown_pct, sharpe_ratio, monthly_profit, yearly_profit) "
+                "VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     stats.initial_balance,
                     stats.current_balance,
@@ -204,6 +216,12 @@ def save_portfolio_stats(stats):
                     stats.total_fees,
                     stats.start_time.isoformat() if stats.start_time else None,
                     stats.last_update.isoformat() if stats.last_update else None,
+                    stats.peak_balance,
+                    stats.max_drawdown,
+                    stats.max_drawdown_pct,
+                    stats.sharpe_ratio,
+                    monthly_json,
+                    yearly_json,
                 ),
             )
 
@@ -235,6 +253,7 @@ def load_grid_states(symbol: str) -> list[dict] | None:
 
 
 def load_portfolio_stats() -> dict | None:
+    import json
     with _db_lock:
         if not DB_PATH.exists():
             return None
@@ -258,6 +277,12 @@ def load_portfolio_stats() -> dict | None:
         "total_fees": row["total_fees"],
         "start_time": datetime.fromisoformat(row["start_time"]) if row["start_time"] else None,
         "last_update": datetime.fromisoformat(row["last_update"]) if row["last_update"] else None,
+        "peak_balance": row["peak_balance"],
+        "max_drawdown": row["max_drawdown"],
+        "max_drawdown_pct": row["max_drawdown_pct"],
+        "sharpe_ratio": row["sharpe_ratio"],
+        "monthly_profit": json.loads(row["monthly_profit"]) if row["monthly_profit"] else {},
+        "yearly_profit": json.loads(row["yearly_profit"]) if row["yearly_profit"] else {},
     }
 
 

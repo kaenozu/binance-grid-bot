@@ -5,8 +5,9 @@
 関連ファイル: bot.py（メインループ）, persistence.py（永続化）, fee.py（手数料計算）
 """
 
+import math
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from src import persistence as persistence_module
@@ -49,6 +50,14 @@ class PortfolioStats:
     avg_profit_per_trade: float = 0.0
     total_fees: float = 0.0
     start_time: datetime | None = None
+    # ── リスク指標 ─────────────────────────────────────────────────
+    peak_balance: float = 0.0   # 過去最高残高（実現利益込み）
+    max_drawdown: float = 0.0    # 最大ドローダウン（USD）
+    max_drawdown_pct: float = 0.0  # 最大ドローダウン率（%）
+    sharpe_ratio: float = 0.0   # シャープレシオ（年間・推定）
+    # ── 月次/年次サマリー ───────────────────────────────────────────
+    monthly_profit: dict[str, float] = field(default_factory=dict)  # {"YYYY-MM": profit}
+    yearly_profit: dict[str, float] = field(default_factory=dict)  # {"YYYY": profit}
     last_update: datetime | None = None
 
 
@@ -151,6 +160,8 @@ class Portfolio:
                 result = self._settle_sell(trade, grid_level)
                 if result is not None:
                     profit, matched_buy_order_id = result
+                    # 月次/年次利益を更新
+                    self._update_periodic_profit(profit, trade.timestamp)
 
         # ロック外で永続化（DB I/O はロック保持しない）
         try:
@@ -226,6 +237,65 @@ class Portfolio:
         with self._lock:
             return self._find_matching_buy_locked(grid_level)
 
+    # ── リスク指標 ───────────────────────────────────────────────────
+
+    def _update_periodic_profit(self, profit: float, timestamp: datetime):
+        """月次/年次利益を更新"""
+        year = timestamp.strftime("%Y")
+        month = timestamp.strftime("%Y-%m")
+
+        if year not in self.stats.yearly_profit:
+            self.stats.yearly_profit[year] = 0.0
+        self.stats.yearly_profit[year] += profit
+
+        if month not in self.stats.monthly_profit:
+            self.stats.monthly_profit[month] = 0.0
+        self.stats.monthly_profit[month] += profit
+
+    def _calculate_sharpe_ratio(self):
+        """シャープレシオを計算（簡略版・年間推定）
+
+        Sharpe = (年均回报 - 無リスク利率) / 年標準偏差
+        無リスク利率は0%、標準偏差は直近利益の分散から推定。
+        """
+        if self.stats.initial_balance <= 0:
+            return
+
+        if not self.stats.start_time:
+            return
+
+        # 経過日数
+        days = (datetime.now() - self.stats.start_time).days
+        if days < 1:
+            return
+
+        # 年率リターン（%）
+        annual_return = (self.stats.total_profit / self.stats.initial_balance) * (365 / days) * 100
+
+        # 利益の標準偏差（%）
+        if len(self.trades) < 2:
+            self.stats.sharpe_ratio = 0.0
+            return
+
+        settled = [t for t in self.trades if t.profit is not None and t.matched]
+        if len(settled) < 2:
+            self.stats.sharpe_ratio = 0.0
+            return
+
+        profits = [t.profit for t in settled]
+        avg = sum(profits) / len(profits)
+        variance = sum((p - avg) ** 2 for p in profits) / len(profits)
+        std = math.sqrt(variance)
+
+        if std == 0:
+            self.stats.sharpe_ratio = 0.0
+            return
+
+        # 年率標準偏差
+        annual_std = std * math.sqrt(365 / days) if days > 0 else std
+
+        self.stats.sharpe_ratio = annual_return / annual_std if annual_std > 0 else 0.0
+
     # ── 未実現損益 ───────────────────────────────────────────────────
 
     def calculate_unrealized_pnl(self, current_price: float):
@@ -240,6 +310,24 @@ class Portfolio:
                     unrealized += gross
             self.stats.unrealized_profit = unrealized
             self.stats.total_profit = self.stats.realized_profit + unrealized
+
+            # ── リスク指標更新 ───────────────────────────────────────
+            total_equity = self.stats.current_balance + unrealized
+
+            # ピーク残高更新
+            if total_equity > self.stats.peak_balance:
+                self.stats.peak_balance = total_equity
+
+            # 最大ドローダウン計算
+            if self.stats.peak_balance > 0:
+                dd_abs = self.stats.peak_balance - total_equity
+                if dd_abs > self.stats.max_drawdown:
+                    self.stats.max_drawdown = dd_abs
+                # ドローダウン率（ピーク比）
+                self.stats.max_drawdown_pct = (dd_abs / self.stats.peak_balance) * 100
+
+            # シャープレシオ計算（年間リターン/標準偏差、簡略版）
+            self._calculate_sharpe_ratio()
 
     # ── レポート・統計 ───────────────────────────────────────────────
 
@@ -258,6 +346,17 @@ class Portfolio:
         elapsed = datetime.now() - self.stats.start_time if self.stats.start_time else None
         hours = elapsed.total_seconds() / 3600 if elapsed else 0
 
+        # 月次/年次サマリー文字列
+        monthly_lines = ""
+        if self.stats.monthly_profit:
+            items = sorted(self.stats.monthly_profit.items(), reverse=True)[:6]
+            monthly_lines = "\n".join(f"  {m}: {p:+.2f}" for m, p in items)
+
+        yearly_lines = ""
+        if self.stats.yearly_profit:
+            items = sorted(self.stats.yearly_profit.items(), reverse=True)[:3]
+            yearly_lines = "\n".join(f"  {y}: {p:+.2f}" for y, p in items)
+
         return (
             f"\n"
             f"===== ポートフォリオレポート =====\n"
@@ -272,6 +371,15 @@ class Portfolio:
             f"取引回数: {self.stats.total_trades}\n"
             f"勝率: {self.stats.win_rate:.1f}%\n"
             f"平均利益/取引: {self.stats.avg_profit_per_trade:+.2f} {self.quote_asset}\n"
+            f"--------------------------------\n"
+            f"===== リスク指標 =====\n"
+            f"ピーク残高: {self.stats.peak_balance:.2f} {self.quote_asset}\n"
+            f"最大ドローダウン: {self.stats.max_drawdown:.2f} {self.quote_asset}\n"
+            f"  ({self.stats.max_drawdown_pct:.2f}%)\n"
+            f"シャープレシオ: {self.stats.sharpe_ratio:.2f}\n"
+            f"--------------------------------\n"
+            f"===== 月次利益 =====\n{monthly_lines or '  (取引なし)'}\n"
+            f"===== 年次利益 =====\n{yearly_lines or '  (取引なし)'}\n"
             f"================================"
         )
 
