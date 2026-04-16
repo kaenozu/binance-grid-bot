@@ -175,11 +175,11 @@ class PaperClient:
         order["executedQty"] = f"{qty:.8f}"
 
     def _try_auto_fill(self, order: dict, symbol: str):
-        """NEW 指値注文を現在価格で評価し、条件を満たせば約定させる"""
+        """NEW 指値注文を内部価格で評価し、条件を満たせば約定させる"""
         if order["status"] != "NEW" or order["price"] == "0":
             return
         try:
-            current = self.get_symbol_price(symbol)
+            current = self._get_cached_price(symbol)
             limit_price = float(order["price"])
             is_buy = current <= limit_price
             is_sell = current >= limit_price
@@ -193,3 +193,10 @@ class PaperClient:
             self._settle_order(order, base, quote, limit_price)
         except Exception:
             pass
+
+    def _get_cached_price(self, symbol: str) -> float:
+        """キャッシュから価格を返す（なければAPI取得）"""
+        if symbol in self._price_cache:
+            cached_price, _ = self._price_cache[symbol]
+            return cached_price
+        return self.get_symbol_price(symbol)

@@ -147,18 +147,15 @@ class BacktestEngine:
     def _check_fills(self, kline: dict):
         """K線のhigh/lowを使って約定をチェック
 
-        同一K線内で買い→売りの連続約定を防止するため、
-        売り約定済みのグリッドはそのK線内で再処理しない
+        2パス方式: まず買い約定を全て処理してから売り約定を処理する。
+        同一K線内で買い→売りの連続約定を許容しつつ、
+        処理順序による非決定的な挙動を防ぐ。
         """
         high, low = kline["high"], kline["low"]
-        filled_this_kline: set[int] = set()
         assert self.strategy is not None
 
+        # パス1: 買い約定
         for grid in self.strategy.grids:
-            if grid.level in filled_this_kline:
-                continue
-
-            # 買い約定チェック
             if grid.level in self.buy_orders and grid.level not in self.positions:
                 if low <= grid.buy_price:
                     quantity = self.strategy.get_order_quantity(
@@ -170,7 +167,8 @@ class BacktestEngine:
                     self.positions[grid.level] = quantity
                     logger.debug(f"買い約定: グリッド {grid.level} @ {grid.buy_price:.2f}")
 
-            # 売り約定チェック
+        # パス2: 売り約定
+        for grid in self.strategy.grids:
             if grid.level in self.positions and grid.sell_price and high >= grid.sell_price:
                 quantity = self.positions.pop(grid.level)
                 buy_price = self.buy_orders.get(grid.level, grid.buy_price)
@@ -180,7 +178,6 @@ class BacktestEngine:
                 self.total_profit += profit
                 self.total_trades += 1
                 self.buy_orders[grid.level] = grid.buy_price
-                filled_this_kline.add(grid.level)
                 logger.debug(
                     f"売り約定: グリッド {grid.level} @ {grid.sell_price:.2f}, 利益={profit:.2f}"
                 )

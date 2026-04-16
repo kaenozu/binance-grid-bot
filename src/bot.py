@@ -343,9 +343,14 @@ class GridBot:
 
         logger.warning(f"オープンポジション {len(open_positions)} 件を成行決済します")
         symbol_info = self.client.get_symbol_info(self.strategy.symbol)
-        base_asset = (
-            symbol_info["base_asset"] if symbol_info else self.symbol.replace("USDT", "")
-        )
+        if not symbol_info:
+            logger.error("シンボル情報取得失敗: 成行決済を中止します")
+            return
+
+        base_asset = symbol_info["base_asset"]
+        step = symbol_info["step_size"]
+        min_q = symbol_info["min_qty"]
+        min_n = symbol_info["min_notional"]
 
         try:
             balances = self.client.get_account_balance()
@@ -361,10 +366,6 @@ class GridBot:
         if available <= 0:
             logger.warning(f"{base_asset} の残高がありません")
             return
-
-        step = symbol_info["step_size"] if symbol_info else 0
-        min_q = symbol_info["min_qty"] if symbol_info else 0
-        min_n = symbol_info["min_notional"] if symbol_info else 0
 
         for grid in open_positions:
             if available <= 0:
