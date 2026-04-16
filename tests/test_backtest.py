@@ -77,7 +77,8 @@ class TestBacktestEngine:
             upper_price=UPPER_PRICE,
             stop_loss_percent=5.0,
         )
-        # 損切り価格: 62900 * 0.95 = 59755
+        # 損切り価格: LOWER_PRICE * 0.95
+        stop_loss_price = LOWER_PRICE * 0.95
         klines = [
             {
                 "open_time": datetime(2026, 1, 1, 0, 0),
@@ -90,10 +91,10 @@ class TestBacktestEngine:
             },
             {
                 "open_time": datetime(2026, 1, 1, 1, 0),
-                "open": 59000.0,
-                "high": 59000.0,
-                "low": 58000.0,
-                "close": 58000.0,
+                "open": stop_loss_price - 100,
+                "high": stop_loss_price - 100,
+                "low": stop_loss_price - 200,
+                "close": stop_loss_price - 200,
                 "volume": 100.0,
                 "close_time": datetime(2026, 1, 1, 2, 0),
             },
@@ -119,7 +120,7 @@ class TestBacktestEngine:
     def test_report_has_grid_range(self, engine, sample_klines):
         report = engine.run(sample_klines)
         assert "grid_range" in report
-        assert "62900" in report["grid_range"]
+        assert str(int(LOWER_PRICE)) in report["grid_range"]
 
     def test_multiple_grid_fills(self):
         # グリッド幅を狭くして約定を起こしやすくする
