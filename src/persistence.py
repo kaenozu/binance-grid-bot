@@ -103,6 +103,7 @@ def _ensure_db():
                 )
             """)
         _connection.commit()
+        _migrate_portfolio_stats(_connection)
         _db_initialized = True
         logger.info(f"DB初期化完了: {DB_PATH}")
 
@@ -111,6 +112,25 @@ def _get_connection() -> sqlite3.Connection:
     _ensure_db()
     assert _connection is not None
     return _connection
+
+
+def _migrate_portfolio_stats(conn: sqlite3.Connection):
+    """既存DBに新カラムがなければ追加（ロック内で呼ぶこと）"""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(portfolio_stats)").fetchall()}
+    new_columns = {
+        "peak_balance": "REAL DEFAULT 0",
+        "max_drawdown": "REAL DEFAULT 0",
+        "max_drawdown_pct": "REAL DEFAULT 0",
+        "sharpe_ratio": "REAL DEFAULT 0",
+        "monthly_profit": "TEXT DEFAULT '{}'",
+        "yearly_profit": "TEXT DEFAULT '{}'",
+    }
+    for col, definition in new_columns.items():
+        if col not in existing:
+            conn.execute(f"ALTER TABLE portfolio_stats ADD COLUMN {col} {definition}")
+            logger.info(f"DB移行: カラム {col} を追加")
+    if any(col not in existing for col in new_columns):
+        conn.commit()
 
 
 def _reset_connection():
