@@ -113,7 +113,10 @@ def test_tick_halts_on_stop_loss():
     bot._close_open_positions = MagicMock()
     bot._persist_state = MagicMock()
 
-    with patch("src.bot.emergency_stop"):
+    def fake_emergency_stop(self):
+        self.is_running = False
+
+    with patch.object(GridBot, "_emergency_stop", fake_emergency_stop):
         bot._tick()
     assert bot.is_running is False
 

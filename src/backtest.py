@@ -10,7 +10,7 @@ from datetime import datetime
 import requests
 
 from config.settings import Settings
-from src.fee import calculate_net_profit
+from utils.fee import calculate_net_profit
 from src.grid_strategy import GridStrategy
 from utils.logger import setup_logger
 

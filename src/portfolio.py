@@ -11,7 +11,7 @@ from datetime import datetime
 
 from src import persistence as persistence_module
 from src.binance_client import BinanceClient
-from src.fee import calculate_net_profit
+from utils.fee import calculate_net_profit
 from utils.logger import setup_logger
 
 logger = setup_logger("portfolio")

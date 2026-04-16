@@ -5,14 +5,21 @@
 関連ファイル: bot.py（メインループ）, binance_client.py（API通信）, grid_strategy.py（戦略）
 """
 
+import math
 from dataclasses import dataclass, field
 
 from src.binance_client import BinanceClient
 from src.grid_strategy import GridStrategy
 from utils.logger import setup_logger
-from utils.price_utils import adjust_price
 
 logger = setup_logger("order_manager")
+
+
+def _adjust_price(price: float, tick_size: float, side: str = "BUY") -> float:
+    """価格をtick_sizeの倍数に調整（BUY: 切り下げ, SELL: 切り上げ）"""
+    if side == "BUY":
+        return math.floor(round(price / tick_size, 10)) * tick_size
+    return math.ceil(round(price / tick_size, 10)) * tick_size
 
 
 @dataclass
@@ -180,7 +187,7 @@ class OrderManager:
         if quantity <= 0:
             return None
 
-        adjusted_price = adjust_price(price, symbol_info["tick_size"], side=side)
+        adjusted_price = _adjust_price(price, symbol_info["tick_size"], side=side)
         order = self.client.place_order(
             symbol=self.strategy.symbol,
             side=side,
