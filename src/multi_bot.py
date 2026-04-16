@@ -33,6 +33,7 @@ class MultiBot:
         self._bots: dict[str, GridBot] = {}  # type: ignore[name-defined]
         self._threads: list[threading.Thread] = []
         self._shutdown_event = threading.Event()
+        self._stop_done = False
         self._errors: dict[str, deque] = {s: deque(maxlen=100) for s in symbols}
 
     def start_all(self):
@@ -64,6 +65,7 @@ class MultiBot:
         except KeyboardInterrupt:
             logger.info("全ボットを停止中...")
 
+        self._stop_done = False
         self.stop_all()
         logger.info("全ボット停止完了")
 
@@ -95,6 +97,9 @@ class MultiBot:
             timeout: タイムアウト秒数
         """
         self._shutdown_event.set()
+        if self._stop_done:
+            return
+        self._stop_done = True
         for bot in self._bots.values():
             try:
                 bot.stop()
