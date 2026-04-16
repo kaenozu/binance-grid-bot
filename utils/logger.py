@@ -1,24 +1,34 @@
-"""ロギング設定（JSON形式）"""
+"""ロギング設定（JSON形式）
 
-import logging
-import json
+ファイルの役割: アプリケーション全体のログ設定を統一
+なぜ存在するか: ログ出力の一貫性・フォーマット統一のため
+関連ファイル: 全モジュール（logger使用）
+"""
+
 import datetime
+import json
+import logging
 import os
 import sys
-from pathlib import Path
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
 
 class JsonFormatter(logging.Formatter):
+    """JSON形式のログフォーマッタ"""
+
     def format(self, record):
         log_record = {
-            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "level": record.levelname,
             "message": record.getMessage(),
-            "module": record.module
+            "module": record.module,
         }
-        return json.dumps(log_record)
+        return json.dumps(log_record, ensure_ascii=False)
+
 
 def setup_logger(name: str = "grid_bot") -> logging.Logger:
+    """ロガーを設定して返す"""
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
 
