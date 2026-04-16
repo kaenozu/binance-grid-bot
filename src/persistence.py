@@ -186,11 +186,8 @@ def save_grid_states(symbol: str, grids: list):
 def save_portfolio_stats(stats):
     with _db_lock:
         conn = _get_connection()
-        import json
-        mp = getattr(stats, 'monthly_profit', {})
-        monthly_json = json.dumps(mp)
-        yp = getattr(stats, 'yearly_profit', {})
-        yearly_json = json.dumps(yp)
+        monthly_json = json.dumps(getattr(stats, 'monthly_profit', {}))
+        yearly_json = json.dumps(getattr(stats, 'yearly_profit', {}))
         with conn:
             conn.execute("DELETE FROM portfolio_stats WHERE id = 1")
             conn.execute(
@@ -253,7 +250,6 @@ def load_grid_states(symbol: str) -> list[dict] | None:
 
 
 def load_portfolio_stats() -> dict | None:
-    import json
     with _db_lock:
         if not DB_PATH.exists():
             return None
