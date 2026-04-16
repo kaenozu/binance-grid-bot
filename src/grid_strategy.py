@@ -128,12 +128,17 @@ class GridStrategy:
 
     def get_active_buy_grids(self) -> list[GridLevel]:
         """買い注文を配置すべきグリッド（未ポジション、sell_priceあり、現在価格以下）"""
-        return [g for g in self.grids if g.buy_price <= self.current_price
-            and not g.position_filled and g.sell_price is not None]
+        return [
+            g for g in self.grids
+            if g.buy_price <= self.current_price
+            and not g.position_filled
+            and g.sell_price is not None
+        ]
 
     def get_active_sell_grids(self) -> list[GridLevel]:
         """売り注文を配置すべきグリッド（ポジション持ち、sell_priceあり）"""
         return [g for g in self.grids if g.position_filled and g.sell_price is not None]
+
     # ── ポジション管理 ───────────────────────────────────────────────
 
     def mark_position_filled(self, grid_level: int, order_id: int):

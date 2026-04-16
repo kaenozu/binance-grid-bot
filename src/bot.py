@@ -78,11 +78,6 @@ class GridBot:
             logger.warning(f"異常価格を検知: {price}。スキップします。")
             return False
 
-        # 初回ティックは検証なし
-        if not hasattr(self, 'current_price') or self.current_price == 0:
-            return True
-
-        # 前回価格との変動率チェック（50%超は異常）
         prev_price = self.strategy.current_price
         if (
             isinstance(prev_price, (int, float))
@@ -220,6 +215,16 @@ class GridBot:
         if now - self._last_status_time >= Settings.STATUS_DISPLAY_INTERVAL:
             self._display_status()
             self._last_status_time = now
+
+        # 詳細ステータスは5分間隔
+        detail_interval = max(Settings.STATUS_DISPLAY_INTERVAL * 5, 300)
+        if now - self._last_detail_time >= detail_interval:
+            self._display_status(detail=True)
+            self._last_detail_time = now
+
+        if now - self._last_persist_time >= Settings.PERSIST_INTERVAL:
+            self._persist_state()
+            self._last_persist_time = now
 
     def _handle_tick_error(self, e: Exception) -> None:
         """ティック処理エラーのハンドリング"""
