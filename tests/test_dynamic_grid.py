@@ -37,7 +37,7 @@ def test_shift_grids_auto(strategy):
     new_price = BASE_PRICE + SPACING * 3
     strategy.update_current_price(new_price)
     strategy.shift_grids()
-    range_factor = 0.15
+    range_factor = 0.08
     assert abs(strategy.lower_price - new_price * (1 - range_factor)) < 0.01
     assert abs(strategy.upper_price - new_price * (1 + range_factor)) < 0.01
     filled_grids = [g for g in strategy.grids if g.position_filled]

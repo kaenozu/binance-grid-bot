@@ -1,9 +1,4 @@
-"""API ウェイト管理
-
-ファイルの役割: Binance APIのレート制限（_weight）を追跡・警告
-なぜ存在するか: API制限による取引中断を防ぐため
-関連ファイル: binance_client.py（API通信）, bot.py（メインループ）
-"""
+"""API ウェイト管理"""
 
 import threading
 import time

@@ -1,9 +1,4 @@
-"""グリッド取引戦略
-
-ファイルの役割: グリッド価格の計算・注文数量計算・ポジション管理
-なぜ存在するか: グリッド取引の核となる戦略ロジックを実装
-関連ファイル: order_manager.py（注文配置）, settings.py（設定）, bot.py（メインループ）
-"""
+"""グリッド取引戦略"""
 
 import math
 from dataclasses import dataclass
@@ -84,7 +79,8 @@ class GridStrategy:
                 level=i,
                 buy_price=self.lower_price + spacing * i,
                 sell_price=(
-                    self.lower_price + spacing * (i + 1) if i < self.grid_count - 1 else None
+                    self.lower_price + spacing * (i + 1)
+                    if i < self.grid_count - 1 else None
                 ),
             )
             for i in range(self.grid_count)

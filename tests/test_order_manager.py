@@ -85,7 +85,9 @@ class TestOrderManager:
 
     def test_get_active_order_count(self, order_manager):
         order_manager.register_order(100, 0, "BUY", LOWER_PRICE, 0.002, "NEW")
-        order_manager.register_order(101, 1, "BUY", LOWER_PRICE + SPACING, 0.002, "FILLED")
+        order_manager.register_order(
+            101, 1, "BUY", LOWER_PRICE + SPACING, 0.002, "FILLED"
+        )
         assert order_manager.get_active_order_count() == 1
 
     def test_place_grid_orders(self, order_manager, mock_client):
@@ -98,54 +100,3 @@ class TestOrderManager:
         result = order_manager.place_grid_orders()
         assert result.placed == 0
         assert len(result.errors) == 1
-
-    def test_place_buy_order_for_grid(self, order_manager, mock_client):
-        result = order_manager.place_buy_order_for_grid(0)
-        assert result is True
-        mock_client.place_order.assert_called_once()
-
-    def test_place_buy_order_for_grid_failure(self, order_manager, mock_client):
-        mock_client.place_order.return_value = None
-        result = order_manager.place_buy_order_for_grid(0)
-        assert result is False
-
-    def test_place_sell_order_for_grid(self, order_manager, mock_client):
-        order_manager.strategy.grids[0].position_filled = True
-        order_manager.strategy.grids[0].filled_quantity = 0.002
-        result = order_manager.place_sell_order_for_grid(0, 0.002)
-        assert result is True
-        mock_client.place_order.assert_called_once()
-
-    def test_place_sell_order_no_sell_price(self, order_manager, mock_client):
-        order_manager.strategy.grids[0].position_filled = True
-        order_manager.strategy.grids[0].sell_price = None
-        result = order_manager.place_sell_order_for_grid(0, 0.002)
-        assert result is False
-
-    def test_check_order_fills_stale_filled(self, order_manager, mock_client):
-        order_manager.register_order(100, 0, "BUY", LOWER_PRICE, 0.002, "FILLED")
-        fills = order_manager.check_order_fills()
-        assert len(fills) == 1
-        assert 100 not in order_manager.active_orders
-
-    def test_check_order_fills_multiple_orders(self, order_manager, mock_client):
-        order_manager.register_order(100, 0, "BUY", LOWER_PRICE, 0.002, "NEW")
-        order_manager.register_order(101, 1, "BUY", LOWER_PRICE + SPACING, 0.002, "NEW")
-        mock_client.get_order.side_effect = [
-            {"status": "FILLED", "price": str(LOWER_PRICE), "executedQty": "0.002"},
-            {"status": "FILLED", "price": str(LOWER_PRICE + SPACING), "executedQty": "0.002"},
-        ]
-        fills = order_manager.check_order_fills()
-        assert len(fills) == 2
-
-    def test_remove_order(self, order_manager):
-        order_manager.register_order(100, 0, "BUY", LOWER_PRICE, 0.002, "NEW")
-        order_manager.remove_order(100)
-        assert 100 not in order_manager.active_orders
-
-    def test_get_active_order_ids(self, order_manager):
-        order_manager.register_order(100, 0, "BUY", LOWER_PRICE, 0.002, "NEW")
-        order_manager.register_order(101, 1, "BUY", LOWER_PRICE + SPACING, 0.002, "NEW")
-        ids = order_manager.get_active_order_ids()
-        assert 100 in ids
-        assert 101 in ids

@@ -1,9 +1,4 @@
-"""グリッド取引ボット メインループ
-
-ファイルの役割: グリッド取引ボットのメインループ、价格更新、約定処理、リスク管理を制御
-なぜ存在するか: ボットのエントリーポイントとして、すべてのコンポーネントを調整
-関連ファイル: order_manager.py（注文管理）, grid_strategy.py（戦略）, risk_manager.py（リスク管理）, portfolio.py（ポートフォリオ）
-"""
+"""グリッド取引ボット メインループ"""
 
 import time
 import traceback
@@ -12,8 +7,6 @@ from config.settings import Settings
 from src import order_sync, persistence
 from src.api_weight import APIWeightTracker
 from src.binance_client import BinanceClient
-from src.bot_display import display_status
-from src.bot_shutdown import close_open_positions, emergency_stop, export_on_stop, stop_bot
 from src.grid_strategy import GridStrategy
 from src.order_manager import OrderManager
 from src.portfolio import Portfolio
@@ -263,6 +256,8 @@ class GridBot:
         }
 
     def _display_status(self):
+        from src.bot_display import display_status
+
         stats = self.portfolio.refresh_stats()
         logger.info(
             f"価格={self.current_price:.2f} "
@@ -279,18 +274,26 @@ class GridBot:
         )
 
     def _export_on_stop(self):
+        from src.bot_shutdown import export_on_stop
+
         export_on_stop(self.portfolio)
 
     def _emergency_stop(self):
+        from src.bot_shutdown import emergency_stop
+
         self.is_running = False
         emergency_stop(
             self.client, self.strategy, self.order_manager, self.portfolio, self._persist_state
         )
 
     def _close_open_positions(self):
+        from src.bot_shutdown import close_open_positions
+
         close_open_positions(self.client, self.strategy, self.portfolio)
 
     def stop(self):
+        from src.bot_shutdown import stop_bot
+
         self.is_running = False
         stop_bot(
             self.client,

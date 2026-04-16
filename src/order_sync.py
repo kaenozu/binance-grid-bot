@@ -1,9 +1,4 @@
-"""起動時の注文同期
-
-ファイルの役割: 取引所のオープン注文と、内部状態を同期
-なぜ存在するか: Bot再起動時に未完了の注文を復元するため
-関連ファイル: bot.py（メインループ）, order_manager.py（注文管理）, persistence.py（永続化）
-"""
+"""起動時の注文同期"""
 
 from utils.logger import setup_logger
 

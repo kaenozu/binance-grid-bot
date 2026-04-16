@@ -48,7 +48,7 @@ class TestBacktestEngine:
     @pytest.fixture
     def engine(self):
         return BacktestEngine(
-            symbol="BTCUSDT",
+            symbol="ETHUSDT",
             investment_amount=1000.0,
             grid_count=10,
             lower_price=LOWER_PRICE,
@@ -58,7 +58,7 @@ class TestBacktestEngine:
 
     def test_run_returns_report(self, engine, sample_klines):
         report = engine.run(sample_klines)
-        assert report["symbol"] == "BTCUSDT"
+        assert report["symbol"] == "ETHUSDT"
         assert report["kline_count"] == 3
         assert report["start_price"] == BASE_PRICE
         assert "roi_percent" in report
@@ -70,14 +70,14 @@ class TestBacktestEngine:
 
     def test_stop_loss_triggered(self):
         engine = BacktestEngine(
-            symbol="BTCUSDT",
+            symbol="ETHUSDT",
             investment_amount=1000.0,
             grid_count=10,
             lower_price=LOWER_PRICE,
             upper_price=UPPER_PRICE,
             stop_loss_percent=5.0,
         )
-        # 損切り価格: 62900 * 0.95 = 59755
+        # 損切り価格: 2144 * 0.95 = 2036.8
         klines = [
             {
                 "open_time": datetime(2026, 1, 1, 0, 0),
@@ -90,10 +90,10 @@ class TestBacktestEngine:
             },
             {
                 "open_time": datetime(2026, 1, 1, 1, 0),
-                "open": 59000.0,
-                "high": 59000.0,
-                "low": 58000.0,
-                "close": 58000.0,
+                "open": 2000.0,
+                "high": 2000.0,
+                "low": 1900.0,
+                "close": 1900.0,
                 "volume": 100.0,
                 "close_time": datetime(2026, 1, 1, 2, 0),
             },
@@ -105,10 +105,10 @@ class TestBacktestEngine:
         no_trade_klines = [
             {
                 "open_time": datetime(2026, 1, 1, 0, 0),
-                "open": 90000.0,
-                "high": 90000.0,
-                "low": 90000.0,
-                "close": 90000.0,
+                "open": 3000.0,
+                "high": 3000.0,
+                "low": 3000.0,
+                "close": 3000.0,
                 "volume": 100.0,
                 "close_time": datetime(2026, 1, 1, 1, 0),
             },
@@ -119,12 +119,12 @@ class TestBacktestEngine:
     def test_report_has_grid_range(self, engine, sample_klines):
         report = engine.run(sample_klines)
         assert "grid_range" in report
-        assert "62900" in report["grid_range"]
+        assert "2144" in report["grid_range"]
 
     def test_multiple_grid_fills(self):
         # グリッド幅を狭くして約定を起こしやすくする
         engine = BacktestEngine(
-            symbol="BTCUSDT",
+            symbol="ETHUSDT",
             investment_amount=10000.0,
             grid_count=5,
             lower_price=BASE_PRICE - 1000,
@@ -166,7 +166,7 @@ class TestBacktestEngine:
 
     def test_drawdown_is_calculated(self):
         engine = BacktestEngine(
-            symbol="BTCUSDT",
+            symbol="ETHUSDT",
             investment_amount=1000.0,
             grid_count=5,
             lower_price=LOWER_PRICE,
@@ -209,7 +209,7 @@ class TestBacktestEngine:
         lower = BASE_PRICE - 500
         upper = BASE_PRICE + 500
         no_fee = BacktestEngine(
-            symbol="BTCUSDT",
+            symbol="ETHUSDT",
             investment_amount=10000.0,
             grid_count=5,
             lower_price=lower,
@@ -218,7 +218,7 @@ class TestBacktestEngine:
             fee_rate=0.0,
         )
         with_fee = BacktestEngine(
-            symbol="BTCUSDT",
+            symbol="ETHUSDT",
             investment_amount=10000.0,
             grid_count=5,
             lower_price=lower,

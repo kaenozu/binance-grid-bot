@@ -8,12 +8,12 @@ from config.settings import Settings
 from src.grid_strategy import GridStrategy
 
 # ── テスト用価格定数（本番のTestnet価格に合わせる） ─────────
-# Testnet の BTC は ~74000 前後で推移
-# グリッド幅は GRID_RANGE_FACTOR=0.15 で ±15% = 62900～85100
-BASE_PRICE = 74000.0
-LOWER_PRICE = 62900.0
-UPPER_PRICE = 85100.0
-GRID_SPACING = (UPPER_PRICE - LOWER_PRICE) / 10  # 2220.0
+# Testnet の ETH は ~2330 前後で推移
+# グリッド幅は GRID_RANGE_FACTOR=0.08 で ±8% = 2144～2516
+BASE_PRICE = 2330.0
+LOWER_PRICE = 2144.0
+UPPER_PRICE = 2516.0
+GRID_SPACING = (UPPER_PRICE - LOWER_PRICE) / 10  # 37.2
 
 # Settings クラスの設定項目名（ UPPER_CASE のクラス変数 ）
 _SETTING_NAMES = [name for name in dir(Settings) if name.isupper() and not name.startswith("_")]
@@ -25,7 +25,6 @@ def clean_db(tmp_path, monkeypatch):
     db_path = tmp_path / "bot_state.db"
     monkeypatch.setattr("src.persistence.DB_PATH", db_path)
     monkeypatch.setattr("src.persistence._db_initialized", False)
-    monkeypatch.setattr("src.persistence._connection", None)
     yield
 
 

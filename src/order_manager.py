@@ -1,16 +1,10 @@
-"""注文管理
-
-ファイルの役割: グリッド注文的配置・約定チェック・キャンセルを管理
-なぜ存在するか: ボットと取引所の間で注文状態を同期するための中心的クラス
-関連ファイル: bot.py（メインループ）, binance_client.py（API通信）, grid_strategy.py（戦略）
-"""
+"""注文管理"""
 
 import math
 from dataclasses import dataclass, field
 
 from src.binance_client import BinanceClient
 from src.grid_strategy import GridStrategy
-from utils.price_utils import adjust_price
 from utils.logger import setup_logger
 
 logger = setup_logger("order_manager")
@@ -179,7 +173,7 @@ class OrderManager:
         if quantity <= 0:
             return None
 
-        adjusted_price = adjust_price(price, symbol_info["tick_size"], side=side)
+        adjusted_price = self._adjust_price(price, symbol_info["tick_size"], side=side)
         order = self.client.place_order(
             symbol=self.strategy.symbol,
             side=side,
@@ -250,11 +244,8 @@ class OrderManager:
             self._apply_fill_to_strategy(info.side, info.grid_level, oid)
             fills.append(
                 FillEvent(
-                    grid=info.grid_level,
-                    side=info.side,
-                    price=info.price,
-                    quantity=info.quantity,
-                    order_id=oid,
+                    grid=info.grid_level, side=info.side,
+                    price=info.price, quantity=info.quantity, order_id=oid,
                 )
             )
         logger.info(f"残留約定済み注文クリーンアップ: {len(stale_ids)} 件")
@@ -281,11 +272,8 @@ class OrderManager:
                 )
                 fills.append(
                     FillEvent(
-                        grid=order_info.grid_level,
-                        side=order_info.side,
-                        price=executed_price,
-                        quantity=executed_qty,
-                        order_id=order_id,
+                        grid=order_info.grid_level, side=order_info.side,
+                        price=executed_price, quantity=executed_qty, order_id=order_id,
                     )
                 )
                 filled_ids.add(order_id)
@@ -337,3 +325,10 @@ class OrderManager:
             else:
                 grid.sell_order_id = order["orderId"]
             logger.info(f"グリッド {grid_level}: {side}注文配置 @ {price}, qty={quantity}")
+
+    @staticmethod
+    def _adjust_price(price: float, tick_size: float, side: str = "BUY") -> float:
+        """価格をtick_sizeの倍数に調整（BUY: 切り下げ, SELL: 切り上げ）"""
+        if side == "BUY":
+            return math.floor(price / tick_size) * tick_size
+        return math.ceil(price / tick_size) * tick_size

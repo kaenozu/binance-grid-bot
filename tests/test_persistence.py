@@ -163,7 +163,6 @@ def test_save_grid_states_overwrites():
     save_grid_states("BTCUSDT", grids_v2)
 
     loaded = load_grid_states("BTCUSDT")
-    assert loaded is not None
     assert len(loaded) == 1
     assert loaded[0]["buy_price"] == LOWER_PRICE + GRID_SPACING * 2
     assert loaded[0]["position_filled"] is False
@@ -198,8 +197,6 @@ def test_multiple_symbols_independent():
     loaded_btc = load_grid_states("BTCUSDT")
     loaded_eth = load_grid_states("ETHUSDT")
 
-    assert loaded_btc is not None
-    assert loaded_eth is not None
     assert loaded_btc[0]["buy_price"] == LOWER_PRICE
     assert loaded_btc[0]["position_filled"] is True
     assert loaded_eth[0]["buy_price"] == 3000.0
