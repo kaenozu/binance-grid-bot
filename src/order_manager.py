@@ -166,6 +166,9 @@ class OrderManager:
             return None
 
         if quantity is None:
+            if not (0 <= grid_level < len(self.strategy.grids)):
+                logger.warning(f"grid_level out of range: {grid_level}")
+                return None
             grid = self.strategy.grids[grid_level]
             quantity = self.strategy.get_order_quantity(
                 grid.buy_price, symbol_info["min_qty"], symbol_info["step_size"]
@@ -244,8 +247,11 @@ class OrderManager:
             self._apply_fill_to_strategy(info.side, info.grid_level, oid)
             fills.append(
                 FillEvent(
-                    grid=info.grid_level, side=info.side,
-                    price=info.price, quantity=info.quantity, order_id=oid,
+                    grid=info.grid_level,
+                    side=info.side,
+                    price=info.price,
+                    quantity=info.quantity,
+                    order_id=oid,
                 )
             )
         logger.info(f"残留約定済み注文クリーンアップ: {len(stale_ids)} 件")
@@ -272,8 +278,11 @@ class OrderManager:
                 )
                 fills.append(
                     FillEvent(
-                        grid=order_info.grid_level, side=order_info.side,
-                        price=executed_price, quantity=executed_qty, order_id=order_id,
+                        grid=order_info.grid_level,
+                        side=order_info.side,
+                        price=executed_price,
+                        quantity=executed_qty,
+                        order_id=order_id,
                     )
                 )
                 filled_ids.add(order_id)

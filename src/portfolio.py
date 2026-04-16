@@ -197,7 +197,9 @@ class Portfolio:
 
         if self.stats.settled_trades > 0:
             self.stats.win_rate = self.stats.winning_trades / self.stats.settled_trades * 100
-        self.stats.avg_profit_per_trade = self.stats.realized_profit / self.stats.settled_trades
+            self.stats.avg_profit_per_trade = self.stats.realized_profit / self.stats.settled_trades
+        else:
+            self.stats.avg_profit_per_trade = 0.0
 
     # ── トレード検索 ─────────────────────────────────────────────────
 

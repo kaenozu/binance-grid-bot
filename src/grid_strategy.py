@@ -48,6 +48,13 @@ class GridStrategy:
             self.upper_price = current_price * (1 + factor)
             logger.info(f"価格帯を自動設定: {self.lower_price:.2f} - {self.upper_price:.2f}")
 
+        if self.upper_price <= self.lower_price:
+            raise ValueError(
+                f"Invalid price range: lower={self.lower_price}, upper={self.upper_price}"
+            )
+        if self.lower_price <= 0:
+            raise ValueError(f"Invalid lower_price: {self.lower_price}")
+
         self.grids: list[GridLevel] = []
         self._calculate_grids()
 
@@ -79,8 +86,7 @@ class GridStrategy:
                 level=i,
                 buy_price=self.lower_price + spacing * i,
                 sell_price=(
-                    self.lower_price + spacing * (i + 1)
-                    if i < self.grid_count - 1 else None
+                    self.lower_price + spacing * (i + 1) if i < self.grid_count - 1 else None
                 ),
             )
             for i in range(self.grid_count)

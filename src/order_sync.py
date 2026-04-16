@@ -32,6 +32,7 @@ def sync_with_exchange(order_manager, strategy) -> tuple[int, int]:
         logger.info(f"内部にのみ存在する注文を削除: {removed} 件")
 
     registered = 0
+    unmatched = 0
     for order in open_orders:
         oid = order["orderId"]
         if oid not in internal_ids:
@@ -55,9 +56,18 @@ def sync_with_exchange(order_manager, strategy) -> tuple[int, int]:
                     elif side == "SELL":
                         strategy.mark_position_closed(grid_level, oid)
                 registered += 1
+            else:
+                logger.warning(
+                    f"missed order sync: {side} {price} (orderId={oid}) - no matching grid"
+                )
+                unmatched += 1
 
     if registered:
         logger.info(f"取引所からの注文を登録: {registered} 件")
+    if unmatched:
+        logger.warning(f"missed order sync total: {unmatched} orders not matched to grids")
+
+    return registered, removed
 
     return registered, removed
 
