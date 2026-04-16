@@ -5,35 +5,14 @@
 関連ファイル: bot.py（メインループ）, binance_client.py（API通信）, grid_strategy.py（戦略）
 """
 
-import math
 from dataclasses import dataclass, field
 
 from src.binance_client import BinanceClient
 from src.grid_strategy import GridStrategy
 from utils.logger import setup_logger
+from utils.price_utils import adjust_price
 
 logger = setup_logger("order_manager")
-
-
-def _adjust_price(price: float, tick_size: float, side: str = "BUY") -> float:
-    """価格をtick_sizeの倍数に調整
-
-    BUY: 切り下げ（より低い指値で約定し易く）
-    SELL: 切り上げ（より高い指値で約定し易く）
-
-    Args:
-        price: 調整前の価格
-        tick_size: 価格精度（BinanceのtickSize）
-        side: BUY または SELL
-
-    Returns:
-        tick_size の倍数に調整された価格。tick_size <= 0 の場合はそのまま返す。
-    """
-    if tick_size <= 0:
-        return price
-    if side == "BUY":
-        return math.floor(round(price / tick_size, 10)) * tick_size
-    return math.ceil(round(price / tick_size, 10)) * tick_size
 
 
 @dataclass
@@ -184,7 +163,11 @@ class OrderManager:
     # ── 注文配置プライベート ────────────────────────────────────────
 
     def _place_order(
-        self, grid_level: int, side: str, price: float, quantity: float | None = None,
+        self,
+        grid_level: int,
+        side: str,
+        price: float,
+        quantity: float | None = None,
         symbol_info: dict | None = None,
     ) -> dict | None:
         """共通注文配置ロジック"""
@@ -201,7 +184,7 @@ class OrderManager:
         if quantity <= 0:
             return None
 
-        adjusted_price = _adjust_price(price, symbol_info["tick_size"], side=side)
+        adjusted_price = adjust_price(price, symbol_info["tick_size"], side=side)
         order = self.client.place_order(
             symbol=self.strategy.symbol,
             side=side,
@@ -240,7 +223,10 @@ class OrderManager:
                 quantity = self._resolve_sell_quantity(grid, symbol_info)
                 if grid.sell_price is not None:
                     result = self._place_order(
-                        grid.level, "SELL", grid.sell_price, quantity,
+                        grid.level,
+                        "SELL",
+                        grid.sell_price,
+                        quantity,
                         symbol_info=symbol_info,
                     )
                     if result is not None:
