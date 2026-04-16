@@ -219,3 +219,55 @@ def test_restore_stats_to():
     assert stats.initial_balance == 500.0
     assert stats.total_trades == 10
     assert stats.realized_profit == 25.0
+
+
+def test_db_migration_adds_missing_columns(tmp_path):
+    """既存DBに新カラムがない場合、マイグレーションで追加される"""
+    from src import persistence as p
+
+    db_path = tmp_path / "migrate_test.db"
+    # 旧スキーマのDBを作成
+    conn = sqlite3.connect(str(db_path))
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS portfolio_stats (
+            id INTEGER PRIMARY KEY CHECK (id = 1),
+            initial_balance REAL DEFAULT 0,
+            current_balance REAL DEFAULT 0,
+            total_profit REAL DEFAULT 0,
+            realized_profit REAL DEFAULT 0,
+            unrealized_profit REAL DEFAULT 0,
+            total_trades INTEGER DEFAULT 0,
+            winning_trades INTEGER DEFAULT 0,
+            losing_trades INTEGER DEFAULT 0,
+            settled_trades INTEGER DEFAULT 0,
+            win_rate REAL DEFAULT 0,
+            avg_profit_per_trade REAL DEFAULT 0,
+            total_fees REAL DEFAULT 0,
+            start_time TEXT,
+            last_update TEXT
+        )
+    """)
+    conn.execute("INSERT INTO portfolio_stats (id) VALUES (1)")
+    conn.commit()
+    conn.close()
+
+    # persistenceにDBパスを設定して_ensure_dbを呼ぶ
+    p.set_db_path(db_path)
+    p._ensure_db()
+
+    # 新カラムが追加されているか確認
+    conn2 = sqlite3.connect(str(db_path))
+    columns = {row[1] for row in conn2.execute("PRAGMA table_info(portfolio_stats)").fetchall()}
+    conn2.close()
+    assert "peak_balance" in columns
+    assert "max_drawdown" in columns
+    assert "sharpe_ratio" in columns
+    assert "monthly_profit" in columns
+    assert "yearly_profit" in columns
+
+    # load_portfolio_stats がエラーなく動くか確認
+    stats = p.load_portfolio_stats()
+    assert stats is not None
+    assert stats["peak_balance"] == 0.0
+
+    p._reset_connection()
