@@ -134,7 +134,6 @@ class GridStrategy:
     def get_active_sell_grids(self) -> list[GridLevel]:
         """売り注文を配置すべきグリッド（ポジション持ち、sell_priceあり）"""
         return [g for g in self.grids if g.position_filled and g.sell_price is not None]
-
     # ── ポジション管理 ───────────────────────────────────────────────
 
     def mark_position_filled(self, grid_level: int, order_id: int):
@@ -175,7 +174,10 @@ class GridStrategy:
             self.upper_price = self.current_price * (1 + factor)
 
         logger.info(f"グリッド範囲シフト: {self.lower_price:.2f} - {self.upper_price:.2f}")
+        self._recalculate_grids_with_positions()
 
+    def _recalculate_grids_with_positions(self):
+        """グリッドを再計算し、既存の約定済みポジションを引き継ぐ"""
         filled_positions = [
             (g.buy_price, g.buy_order_id, g.filled_quantity, g.sell_price)
             for g in self.grids
@@ -240,15 +242,13 @@ class GridStrategy:
                 f"ボラティリティ調整スキップ: ATR={current_atr}, multiplier={multiplier}"
             )
             return
-        filled_positions = [
-            (g.buy_price, g.buy_order_id, g.filled_quantity, g.sell_price)
-            for g in self.grids
-            if g.position_filled
-        ]
         range_width = current_atr * multiplier
-        self.lower_price = self.current_price - range_width / 2
-        self.upper_price = self.current_price + range_width / 2
+        new_lower = self.current_price - range_width / 2
+        new_upper = self.current_price + range_width / 2
+        if new_lower < 0:
+            logger.warning(f"ボラティリティ調整: 下限が負になるため0に補正 ({new_lower:.2f})")
+            new_lower = 0.0
+        self.lower_price = new_lower
+        self.upper_price = new_upper
         logger.info(f"ボラティリティ調整: 新範囲 {self.lower_price:.2f} - {self.upper_price:.2f}")
-        self._calculate_grids()
-        if filled_positions:
-            self._remap_positions(filled_positions)
+        self._recalculate_grids_with_positions()

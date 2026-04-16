@@ -72,3 +72,30 @@ class TestSettingsValidation:
             assert any("MAX_POSITIONS" in e for e in errors)
         finally:
             Settings.MAX_POSITIONS = original
+
+    def test_validate_catches_invalid_grid_range_factor(self):
+        original = Settings.GRID_RANGE_FACTOR
+        Settings.GRID_RANGE_FACTOR = 0.0
+        try:
+            errors = Settings.validate()
+            assert any("GRID_RANGE_FACTOR" in e for e in errors)
+        finally:
+            Settings.GRID_RANGE_FACTOR = original
+
+    def test_validate_catches_zero_check_interval(self):
+        original = Settings.CHECK_INTERVAL
+        Settings.CHECK_INTERVAL = 0
+        try:
+            errors = Settings.validate()
+            assert any("CHECK_INTERVAL" in e for e in errors)
+        finally:
+            Settings.CHECK_INTERVAL = original
+
+    def test_validate_catches_negative_fee_rate(self):
+        original = Settings.TRADING_FEE_RATE
+        Settings.TRADING_FEE_RATE = -0.001
+        try:
+            errors = Settings.validate()
+            assert any("TRADING_FEE_RATE" in e for e in errors)
+        finally:
+            Settings.TRADING_FEE_RATE = original

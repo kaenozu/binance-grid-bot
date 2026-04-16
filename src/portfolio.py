@@ -318,13 +318,12 @@ class Portfolio:
             if total_equity > self.stats.peak_balance:
                 self.stats.peak_balance = total_equity
 
-            # 最大ドローダウン計算
+            # 最大ドローダウン計算（絶対額と率を同期）
             if self.stats.peak_balance > 0:
                 dd_abs = self.stats.peak_balance - total_equity
                 if dd_abs > self.stats.max_drawdown:
                     self.stats.max_drawdown = dd_abs
-                # ドローダウン率（ピーク比）
-                self.stats.max_drawdown_pct = (dd_abs / self.stats.peak_balance) * 100
+                    self.stats.max_drawdown_pct = (dd_abs / self.stats.peak_balance) * 100
 
             # シャープレシオ計算（年間リターン/標準偏差、簡略版）
             self._calculate_sharpe_ratio()

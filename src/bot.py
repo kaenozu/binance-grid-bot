@@ -10,7 +10,7 @@ from src import exporter, order_sync, persistence
 from src.api_weight import APIWeightTracker
 from src.binance_client import BinanceClient
 from src.grid_strategy import GridStrategy
-from src.order_manager import OrderManager
+from src.order_manager import OrderManager, OrderPlacementResult
 from src.portfolio import Portfolio
 from src.risk_manager import RiskManager
 from src.ws_client import BinanceWebSocketClient
@@ -230,12 +230,12 @@ class GridBot:
 
     # ── 注文管理 ───────────────────────────────────────────────────
 
-    def _place_initial_orders(self) -> dict | None:
+    def _place_initial_orders(self) -> OrderPlacementResult | None:
         """初期注文を配置"""
         logger.info("初期注文配置開始...")
         result = self.order_manager.place_grid_orders()
         logger.info(f"初期注文配置完了: {result.placed} 件")
-        return self.client.get_symbol_info(self.strategy.symbol)
+        return result
 
     def _place_grid_orders_for_level(self, grid_level: int):
         """特定グリッドレベルの買い注文を配置（決済後）"""
