@@ -92,7 +92,7 @@ class GridBot:
 
     def _sync_orders(self):
         """取引所のオープン注文と内部状態を同期"""
-        registered, removed = order_sync.sync_with_exchange(self.order_manager, self.strategy)
+        registered, removed = order_sync.sync_with_exchange(self.order_manager, self.strategy, self.risk_manager)
         if registered or removed:
             logger.info(f"注文同期完了: 登録={registered}, 削除={removed}")
 
@@ -124,10 +124,11 @@ class GridBot:
                 time.sleep(Settings.CHECK_INTERVAL)
         except KeyboardInterrupt:
             logger.info("KeyboardInterrupt 検出。ボット停止中...")
-            self.stop()
         except Exception as e:
             logger.error(f"予期せぬエラー: {e}", exc_info=True)
-            self.stop()
+        finally:
+            if self.is_running:
+                self.stop()
 
     def _place_initial_orders(self) -> dict | None:
         """初期注文を配置

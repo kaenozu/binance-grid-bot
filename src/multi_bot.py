@@ -82,6 +82,7 @@ class MultiBot:
                     logger.critical(
                         f"ペア {symbol}: 連続失敗 {max_retries} 回。全ボットを停止します。"
                     )
+                    self._bots.pop(symbol, None)
                     self._shutdown_event.set()
                     break
                 if not self._shutdown_event.is_set():

@@ -211,13 +211,14 @@ def save_portfolio_stats(stats):
 def load_grid_states(symbol: str) -> list[dict] | None:
     if not DB_PATH.exists():
         return None
-    conn = _get_connection()
-    rows = conn.execute(
-        "SELECT grid_level, buy_price, sell_price, buy_order_id, "
-        "sell_order_id, position_filled FROM grid_states "
-        "WHERE symbol = ? ORDER BY grid_level",
-        (symbol,),
-    ).fetchall()
+    with _db_lock:
+        conn = _get_connection()
+        rows = conn.execute(
+            "SELECT grid_level, buy_price, sell_price, buy_order_id, "
+            "sell_order_id, position_filled FROM grid_states "
+            "WHERE symbol = ? ORDER BY grid_level",
+            (symbol,),
+        ).fetchall()
     if not rows:
         return None
     return [
@@ -236,8 +237,9 @@ def load_grid_states(symbol: str) -> list[dict] | None:
 def load_portfolio_stats() -> dict | None:
     if not DB_PATH.exists():
         return None
-    conn = _get_connection()
-    rows = conn.execute("SELECT * FROM portfolio_stats WHERE id = 1").fetchall()
+    with _db_lock:
+        conn = _get_connection()
+        rows = conn.execute("SELECT * FROM portfolio_stats WHERE id = 1").fetchall()
     if not rows:
         return None
     row = rows[0]
@@ -273,12 +275,13 @@ def update_trade_matched(order_id: int, matched: bool):
 def load_trades() -> list[dict]:
     if not DB_PATH.exists():
         return []
-    conn = _get_connection()
-    rows = conn.execute(
-        "SELECT timestamp, symbol, side, price, quantity, "
-        "order_id, grid_level, profit, matched "
-        "FROM trades ORDER BY id ASC"
-    ).fetchall()
+    with _db_lock:
+        conn = _get_connection()
+        rows = conn.execute(
+            "SELECT timestamp, symbol, side, price, quantity, "
+            "order_id, grid_level, profit, matched "
+            "FROM trades ORDER BY id ASC"
+        ).fetchall()
     return [
         {
             "timestamp": datetime.fromisoformat(row["timestamp"]),

@@ -21,6 +21,8 @@ class PaperClient:
             "USDT": {"free": 10000.0, "locked": 0.0},
             "BTC": {"free": 0.0, "locked": 0.0},
         }
+        self._price_cache: dict[str, tuple[float, float]] = {}  # {symbol: (price, timestamp)}
+        self._price_cache_ttl = 5.0  # seconds
 
     def close(self):
         pass
@@ -38,13 +40,21 @@ class PaperClient:
         return dict(self._balances)
 
     def get_symbol_price(self, symbol: str) -> float:
+        import time as _time
+        now = _time.time()
+        if symbol in self._price_cache:
+            cached_price, cached_time = self._price_cache[symbol]
+            if now - cached_time < self._price_cache_ttl:
+                return cached_price
         response = requests_lib.get(
             "https://testnet.binance.vision/api/v3/ticker/price",
             params={"symbol": symbol},
             timeout=10,
         )
         response.raise_for_status()
-        return float(response.json()["price"])
+        price = float(response.json()["price"])
+        self._price_cache[symbol] = (price, now)
+        return price
 
     def get_symbol_info(self, symbol: str) -> dict | None:
         return {

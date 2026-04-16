@@ -10,12 +10,13 @@ from utils.logger import setup_logger
 logger = setup_logger("order_sync")
 
 
-def sync_with_exchange(order_manager, strategy) -> tuple[int, int]:
+def sync_with_exchange(order_manager, strategy, risk_manager=None) -> tuple[int, int]:
     """取引所のオープン注文と内部状態を同期
 
     Args:
         order_manager: OrderManager インスタンス
         strategy: GridStrategy インスタンス
+        risk_manager: RiskManager インスタンス（ポジションカウント同期用）
 
     Returns:
         (registered_count, removed_count) 同期結果
@@ -57,8 +58,12 @@ def sync_with_exchange(order_manager, strategy) -> tuple[int, int]:
                 if status == "FILLED":
                     if side == "BUY":
                         strategy.mark_position_filled(grid_level, oid)
+                        if risk_manager:
+                            risk_manager.record_position_open()
                     elif side == "SELL":
                         strategy.mark_position_closed(grid_level, oid)
+                        if risk_manager:
+                            risk_manager.record_position_close()
                 registered += 1
 
     if registered:

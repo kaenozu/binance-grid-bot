@@ -48,18 +48,18 @@ class Settings:
     GRID_COUNT: int = _safe_int(os.getenv("GRID_COUNT"), 10)
     LOWER_PRICE: float | None = _safe_float_optional(os.getenv("LOWER_PRICE"))
     UPPER_PRICE: float | None = _safe_float_optional(os.getenv("UPPER_PRICE"))
-    INVESTMENT_AMOUNT: float = _safe_float(os.getenv("INVESTMENT_AMOUNT"), 100.0) or 100.0
+    INVESTMENT_AMOUNT: float = _safe_float(os.getenv("INVESTMENT_AMOUNT"), 100.0)
 
     # リスク管理
-    STOP_LOSS_PERCENTAGE: float = _safe_float(os.getenv("STOP_LOSS_PERCENTAGE"), 5.0) or 5.0
+    STOP_LOSS_PERCENTAGE: float = _safe_float(os.getenv("STOP_LOSS_PERCENTAGE"), 5.0)
     MAX_POSITIONS: int = _safe_int(os.getenv("MAX_POSITIONS"), 5)
 
     # ボット動作設定
     CHECK_INTERVAL: int = _safe_int(os.getenv("CHECK_INTERVAL"), 10)
     STATUS_DISPLAY_INTERVAL: int = _safe_int(os.getenv("STATUS_DISPLAY_INTERVAL"), 60)
     MAX_CONSECUTIVE_ERRORS: int = _safe_int(os.getenv("MAX_CONSECUTIVE_ERRORS"), 5)
-    GRID_RANGE_FACTOR: float = _safe_float(os.getenv("GRID_RANGE_FACTOR"), 0.15) or 0.15
-    TRADING_FEE_RATE: float = _safe_float(os.getenv("TRADING_FEE_RATE"), 0.001) or 0.001
+    GRID_RANGE_FACTOR: float = _safe_float(os.getenv("GRID_RANGE_FACTOR"), 0.15)
+    TRADING_FEE_RATE: float = _safe_float(os.getenv("TRADING_FEE_RATE"), 0.001)
     CLOSE_ON_STOP: bool = os.getenv("CLOSE_ON_STOP", "true").lower() == "true"
     PERSIST_INTERVAL: int = _safe_int(os.getenv("PERSIST_INTERVAL"), 60)
 

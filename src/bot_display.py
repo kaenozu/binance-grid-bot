@@ -47,5 +47,4 @@ def display_status(
         "Ctrl+C で停止",
     ]
     output = "\n".join(lines)
-    print(output)
     logger.info(output)

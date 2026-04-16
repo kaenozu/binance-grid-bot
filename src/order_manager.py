@@ -163,10 +163,12 @@ class OrderManager:
     # ── 注文配置プライベート ────────────────────────────────────────
 
     def _place_order(
-        self, grid_level: int, side: str, price: float, quantity: float | None = None
+        self, grid_level: int, side: str, price: float, quantity: float | None = None,
+        symbol_info: dict | None = None,
     ) -> dict | None:
         """共通注文配置ロジック"""
-        symbol_info = self.client.get_symbol_info(self.strategy.symbol)
+        if symbol_info is None:
+            symbol_info = self.client.get_symbol_info(self.strategy.symbol)
         if not symbol_info:
             return None
 
@@ -196,7 +198,7 @@ class OrderManager:
             if grid.position_filled:
                 continue
             try:
-                if self._place_order(grid.level, "BUY", grid.buy_price) is not None:
+                if self._place_order(grid.level, "BUY", grid.buy_price, symbol_info=symbol_info) is not None:
                     placed_count += 1
                 else:
                     logger.warning(f"グリッド {grid.level}: 買い注文スキップ（数量無効）")
@@ -213,7 +215,7 @@ class OrderManager:
             try:
                 quantity = self._resolve_sell_quantity(grid, symbol_info)
                 if grid.sell_price is not None:
-                    if self._place_order(grid.level, "SELL", grid.sell_price, quantity) is not None:
+                    if self._place_order(grid.level, "SELL", grid.sell_price, quantity, symbol_info=symbol_info) is not None:
                         placed_count += 1
             except Exception as e:
                 errors.append(f"グリッド {grid.level} 売り注文失敗: {e}")
