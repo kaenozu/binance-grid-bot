@@ -90,6 +90,10 @@ class MultiBot:
                 if not self._shutdown_event.is_set():
                     time.sleep(5)
 
+    def stop(self, timeout: float = 30):
+        """全ボットを停止（stop_all のエイリアス）"""
+        self.stop_all(timeout)
+
     def stop_all(self, timeout: float = 30):
         """全ボットを停止
 

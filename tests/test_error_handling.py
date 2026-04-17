@@ -19,6 +19,9 @@ def _make_bot():
     bot.risk_manager = MagicMock()
     bot.risk_manager.should_halt_trading.return_value = False
     bot.portfolio = MagicMock()
+    bot.portfolio.stats = MagicMock()
+    bot.portfolio.stats.peak_balance = 0.0
+    bot.portfolio.stats.max_drawdown_pct = 0.0
     bot.strategy = MagicMock()
     bot.strategy.current_price = 2300.0
     bot.strategy.is_within_grid_range.return_value = True

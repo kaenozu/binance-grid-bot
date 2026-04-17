@@ -64,6 +64,15 @@ class TestSettingsValidation:
         finally:
             Settings.STOP_LOSS_PERCENTAGE = original
 
+    def test_validate_catches_invalid_max_drawdown(self):
+        original = Settings.MAX_DRAWDOWN_PCT
+        Settings.MAX_DRAWDOWN_PCT = 0
+        try:
+            errors = Settings.validate()
+            assert any("MAX_DRAWDOWN_PCT" in e for e in errors)
+        finally:
+            Settings.MAX_DRAWDOWN_PCT = original
+
     def test_validate_catches_zero_max_positions(self):
         original = Settings.MAX_POSITIONS
         Settings.MAX_POSITIONS = 0

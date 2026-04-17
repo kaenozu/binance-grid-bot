@@ -5,26 +5,40 @@
 関連ファイル: order_manager.py（注文配置）, settings.py（設定）, bot.py（メインループ）
 """
 
-import math
 from dataclasses import dataclass
 
 from config.settings import Settings
 from utils.logger import setup_logger
+from utils.precision import quantize_down, quantize_up, format_decimal
 
 logger = setup_logger("grid_strategy")
 
 
 @dataclass
 class GridLevel:
-    """グリッドレベル（各注文の価格帯）"""
+    """グリッドレベル（各注文の価格帯）
+
+    双方向グリッド対応:
+    - buy_price / sell_price: 下方向（BUY below → SELL above）
+    - short_sell_price / short_buyback_price: 上方向（SELL above → BUY back below）
+    """
 
     level: int
     buy_price: float
     sell_price: float | None
+    # 上方向グリッド（売りから入って買い戻す）
+    short_sell_price: float | None = None
+    short_buyback_price: float | None = None
+    # 下方向ポジション
     buy_order_id: int | None = None
     sell_order_id: int | None = None
     position_filled: bool = False
     filled_quantity: float | None = None
+    # 上方向ポジション
+    short_sell_order_id: int | None = None
+    short_buyback_order_id: int | None = None
+    short_position_filled: bool = False
+    short_filled_quantity: float | None = None
 
 
 class GridStrategy:
@@ -77,19 +91,44 @@ class GridStrategy:
     # ── グリッド計算 ────────────────────────────────────────────────
 
     def _calculate_grids(self):
-        """グリッドレベルを計算"""
+        """グリッドレベルを計算
+
+        手数料を考慮し、1グリッドあたりの利益が手数料の2倍以上になることを確認。
+        そうでない場合は警告を出力する。
+        浮動小数点誤差を防ぐため10進精度で丸める。
+        """
         spacing = self.grid_spacing
+        fee_rate = Settings.TRADING_FEE_RATE
+        total_fee_rate = fee_rate * 2
+        profit_rate = spacing / (self.lower_price + spacing / 2) if self.lower_price > 0 else 0
+
+        if profit_rate < total_fee_rate:
+            logger.warning(
+                f"グリッド間隔が狭すぎます: 利益率={profit_rate * 100:.3f}%, "
+                f"往復手数料={total_fee_rate * 100:.3f}%。"
+                f"GRID_COUNT を減らすか INVESTMENT_AMOUNT を増やしてください。"
+            )
+
+        precision = 8
         self.grids = [
             GridLevel(
                 level=i,
-                buy_price=self.lower_price + spacing * i,
+                buy_price=round(self.lower_price + spacing * i, precision),
                 sell_price=(
-                    self.lower_price + spacing * (i + 1) if i < self.grid_count - 1 else None
+                    round(self.lower_price + spacing * (i + 1), precision)
+                    if i < self.grid_count - 1
+                    else None
                 ),
+                short_sell_price=(
+                    round(self.lower_price + spacing * (i + 1), precision)
+                    if i > 0
+                    else None
+                ),
+                short_buyback_price=round(self.lower_price + spacing * i, precision) if i > 0 else None,
             )
             for i in range(self.grid_count)
         ]
-        logger.info(f"グリッド計算完了: {len(self.grids)} レベル")
+        logger.info(f"グリッド計算完了: {len(self.grids)} レベル (双方向)")
 
     # ── 注文数量 ────────────────────────────────────────────────────
 
@@ -99,16 +138,17 @@ class GridStrategy:
         min_qty: float = 0,
         step_size: float = 0,
         min_notional: float = 0,
+        max_notional: float | None = None,
     ) -> float:
         """注文数量を計算（投資額を均等分配）"""
         amount_per_grid = self.investment_amount / self.grid_count
         raw_qty = amount_per_grid / price
 
-        qty = math.floor(raw_qty / step_size) * step_size if step_size > 0 else raw_qty
+        qty = quantize_down(raw_qty, step_size) if step_size > 0 else raw_qty
 
         if min_qty > 0 and qty < min_qty:
             logger.warning(f"計算数量 {qty} が最小数量 {min_qty} を下回っています")
-            qty = math.ceil(min_qty / step_size) * step_size if step_size > 0 else min_qty
+            qty = quantize_up(min_qty, step_size) if step_size > 0 else min_qty
 
         if min_notional > 0:
             notional_value = qty * price
@@ -119,17 +159,45 @@ class GridStrategy:
                 )
                 adjusted_qty = min_notional / price
                 if step_size > 0:
-                    adjusted_qty = math.ceil(adjusted_qty / step_size) * step_size
+                    adjusted_qty = quantize_up(adjusted_qty, step_size)
                 qty = adjusted_qty
 
+        if max_notional is not None and max_notional > 0:
+            notional_value = qty * price
+            if notional_value > max_notional + 1e-12:
+                logger.warning(
+                    f"注文金額 {notional_value:.2f} USDT が上限 "
+                    f"{max_notional:.2f} USDT を超えるためスキップします"
+                )
+                return 0
+
         return qty
+
+    def estimate_cycle_profit(self, price: float | None = None, fee_rate: float | None = None) -> float:
+        """1往復（BUY→SELL）の概算純利益を返す。
+
+        価格は現在価格を使う。BUY/SELL の実効価格差はグリッド間隔、
+        手数料は往復で 2 回発生するとみなす。
+        """
+        effective_price = price if price and price > 0 else self.current_price
+        effective_fee_rate = Settings.TRADING_FEE_RATE if fee_rate is None else fee_rate
+
+        if effective_price <= 0 or self.grid_count <= 0:
+            return 0.0
+
+        amount_per_grid = self.investment_amount / self.grid_count
+        raw_qty = amount_per_grid / effective_price
+        gross = raw_qty * self.grid_spacing
+        fees = amount_per_grid * (effective_fee_rate * 2)
+        return gross - fees
 
     # ── アクティブグリッド ──────────────────────────────────────────
 
     def get_active_buy_grids(self) -> list[GridLevel]:
         """買い注文を配置すべきグリッド（未ポジション、sell_priceあり、現在価格以下）"""
         return [
-            g for g in self.grids
+            g
+            for g in self.grids
             if g.buy_price <= self.current_price
             and not g.position_filled
             and g.sell_price is not None
@@ -138,6 +206,25 @@ class GridStrategy:
     def get_active_sell_grids(self) -> list[GridLevel]:
         """売り注文を配置すべきグリッド（ポジション持ち、sell_priceあり）"""
         return [g for g in self.grids if g.position_filled and g.sell_price is not None]
+
+    def get_active_short_sell_grids(self) -> list[GridLevel]:
+        """上方向SELL注文を配置すべきグリッド（価格より上、未ショート）"""
+        return [
+            g
+            for g in self.grids
+            if g.short_sell_price is not None
+            and g.short_sell_price > self.current_price
+            and not g.short_position_filled
+        ]
+
+    def get_active_short_buyback_grids(self) -> list[GridLevel]:
+        """上方向BUYBACK注文を配置すべきグリッド（ショートポジション持ち）"""
+        return [
+            g
+            for g in self.grids
+            if g.short_position_filled
+            and g.short_buyback_price is not None
+        ]
 
     # ── ポジション管理 ───────────────────────────────────────────────
 
@@ -156,6 +243,22 @@ class GridStrategy:
             grid.position_filled = False
             grid.sell_order_id = order_id
             logger.info(f"グリッド {grid_level} 売り約定記録: order_id={order_id}")
+
+    def mark_short_filled(self, grid_level: int, order_id: int):
+        """上方向SELL約定を記録"""
+        grid = self._grid_at(grid_level)
+        if grid:
+            grid.short_position_filled = True
+            grid.short_sell_order_id = order_id
+            logger.info(f"グリッド {grid_level} ショートSELL約定記録: order_id={order_id}")
+
+    def mark_short_closed(self, grid_level: int, order_id: int):
+        """上方向BUYBACK約定を記録"""
+        grid = self._grid_at(grid_level)
+        if grid:
+            grid.short_position_filled = False
+            grid.short_buyback_order_id = order_id
+            logger.info(f"グリッド {grid_level} ショートBUYBACK約定記録: order_id={order_id}")
 
     def _grid_at(self, level: int) -> GridLevel | None:
         """レベル番号からグリッドを取得（O(1)、範囲外はNone）"""

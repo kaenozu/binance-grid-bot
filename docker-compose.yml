@@ -9,6 +9,7 @@ services:
     volumes:
       - bot-data:/app/data
       - ./logs:/app/logs
+    stop_grace_period: 30s
 
 volumes:
   bot-data:

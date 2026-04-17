@@ -64,6 +64,7 @@ def mock_settings():
         mock.UPPER_PRICE = None
         mock.INVESTMENT_AMOUNT = 1000.0
         mock.STOP_LOSS_PERCENTAGE = 5.0
+        mock.MAX_DRAWDOWN_PCT = 10.0
         mock.MAX_POSITIONS = 5
         mock.CHECK_INTERVAL = 10
         mock.MAX_CONSECUTIVE_ERRORS = 5

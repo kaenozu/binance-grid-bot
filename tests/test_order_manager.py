@@ -109,12 +109,44 @@ class TestOrderManager:
         result = order_manager.place_buy_order_for_grid(0)
         assert result is False
 
+    def test_place_buy_order_skips_when_min_notional_would_exceed_budget(self, strategy):
+        strategy.investment_amount = 10.0
+        client = MagicMock()
+        client.get_symbol_info.return_value = {
+            "symbol": "BTCUSDT",
+            "status": "TRADING",
+            "min_qty": 0.00001,
+            "step_size": 0.00001,
+            "tick_size": 0.01,
+            "min_notional": 10.0,
+        }
+        client.place_order.return_value = {
+            "orderId": 99999,
+            "price": str(BASE_PRICE),
+            "origQty": "0.002",
+            "status": "NEW",
+        }
+        client.get_open_orders.return_value = []
+
+        order_manager = OrderManager(client, strategy)
+        result = order_manager.place_buy_order_for_grid(0)
+
+        assert result is False
+        client.place_order.assert_not_called()
+
     def test_place_sell_order_for_grid(self, order_manager, mock_client):
         order_manager.strategy.grids[0].position_filled = True
         order_manager.strategy.grids[0].filled_quantity = 0.002
         result = order_manager.place_sell_order_for_grid(0, 0.002)
         assert result is True
         mock_client.place_order.assert_called_once()
+
+    def test_place_sell_order_for_grid_skips_below_min_qty(self, order_manager, mock_client):
+        order_manager.strategy.grids[0].position_filled = True
+        order_manager.strategy.grids[0].filled_quantity = 0.000001
+        result = order_manager.place_sell_order_for_grid(0, 0.000001)
+        assert result is False
+        mock_client.place_order.assert_not_called()
 
     def test_place_sell_order_no_sell_price(self, order_manager, mock_client):
         order_manager.strategy.grids[0].position_filled = True

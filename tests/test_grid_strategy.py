@@ -39,6 +39,26 @@ class TestGridStrategy:
         qty = grid_strategy.get_order_quantity(BASE_PRICE, min_qty=0.001, step_size=0.00001)
         assert qty >= 0.001
 
+    def test_order_quantity_skips_when_min_notional_exceeds_budget(self):
+        strategy = GridStrategy(
+            symbol="BTCUSDT",
+            current_price=BASE_PRICE,
+            lower_price=LOWER_PRICE,
+            upper_price=UPPER_PRICE,
+            grid_count=10,
+            investment_amount=10.0,
+        )
+
+        qty = strategy.get_order_quantity(
+            price=BASE_PRICE,
+            min_qty=0.00001,
+            step_size=0.00001,
+            min_notional=10.0,
+            max_notional=1.0,
+        )
+
+        assert qty == 0
+
     def test_active_buy_grids(self, grid_strategy):
         buy_grids = grid_strategy.get_active_buy_grids()
         assert len(buy_grids) == 6
@@ -96,3 +116,17 @@ class TestGridStrategy:
     def test_profit_per_grid_percent(self, grid_strategy):
         pct = grid_strategy.profit_per_grid_percent
         assert pct > 0
+
+    def test_estimate_cycle_profit(self):
+        strategy = GridStrategy(
+            symbol="ETHJPY",
+            current_price=374852.0,
+            lower_price=374852.0 * 0.92,
+            upper_price=374852.0 * 1.08,
+            grid_count=4,
+            investment_amount=6000.0,
+        )
+
+        profit = strategy.estimate_cycle_profit(374852.0, 0.001)
+
+        assert profit > 50.0
