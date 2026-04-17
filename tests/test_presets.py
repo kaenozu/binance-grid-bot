@@ -31,7 +31,7 @@ class TestPresetDefinitions:
             assert preset.max_positions >= 1, f"{key}: max_positions >= 1"
             assert preset.trading_fee_rate >= 0, f"{key}: fee_rate >= 0"
             assert preset.risk_level in ("low", "medium", "high"), f"{key}: risk_level 不正"
-            assert preset.min_capital_usdt > 0, f"{key}: min_capital > 0"
+            assert preset.min_capital > 0, f"{key}: min_capital > 0"
 
     def test_stop_loss_less_than_max_drawdown(self):
         """損切りは最大DD以下であるべき"""
@@ -44,7 +44,7 @@ class TestPresetDefinitions:
         """最低資金は投資額以下であるべき"""
         for key, preset in PRESETS.items():
             assert (
-                preset.min_capital_usdt <= preset.investment_amount
+                preset.min_capital <= preset.investment_amount
             ), f"{key}: min_capital > investment"
 
     def test_unique_symbols_in_multi_presets(self):

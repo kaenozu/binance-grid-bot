@@ -19,14 +19,16 @@ GRID_SPACING = (UPPER_PRICE - LOWER_PRICE) / 10  # 37.2
 _SETTING_NAMES = [name for name in dir(Settings) if name.isupper() and not name.startswith("_")]
 
 
-@pytest.fixture(autouse=True)
-def clean_db(tmp_path, monkeypatch):
+@pytest.fixture(autouse=True, scope="function")
+def clean_db(tmp_path):
     """テスト実行中は本番DBではなく一時DBを使用する（全テスト共通）"""
+    from src import persistence
+
+    persistence._reset_connection()
     db_path = tmp_path / "bot_state.db"
-    monkeypatch.setattr("src.persistence.DB_PATH", db_path)
-    monkeypatch.setattr("src.persistence._db_initialized", False)
-    monkeypatch.setattr("src.persistence._connection", None)
+    persistence.set_db_path(db_path)
     yield
+    persistence._reset_connection()
 
 
 @pytest.fixture(autouse=True)

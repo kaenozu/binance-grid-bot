@@ -24,7 +24,7 @@ class GridPreset:
     max_positions: int
     trading_fee_rate: float
     risk_level: str  # "low", "medium", "high"
-    min_capital_usdt: float  # このプリセットに必要な最低USDT
+    min_capital: float  # このプリセットに必要な最低USDT
     expected_daily_return_pct: float  # 推定日次リターン（参考値）
 
 
@@ -60,7 +60,7 @@ PRESETS: dict[str, GridPreset] = {
         max_positions=3,
         trading_fee_rate=0.001,
         risk_level="medium",
-        min_capital_usdt=5000,       # in JPY for JPY pairs
+        min_capital=5000,       # in JPY for JPY pairs
         expected_daily_return_pct=0.20,
     ),
     "sol-jpy-standard": GridPreset(
@@ -79,7 +79,7 @@ PRESETS: dict[str, GridPreset] = {
         max_positions=4,
         trading_fee_rate=0.001,
         risk_level="medium",
-        min_capital_usdt=10000,
+        min_capital=10000,
         expected_daily_return_pct=0.25,
     ),
     "sol-jpy-rich": GridPreset(
@@ -98,7 +98,7 @@ PRESETS: dict[str, GridPreset] = {
         max_positions=5,
         trading_fee_rate=0.001,
         risk_level="medium",
-        min_capital_usdt=30000,
+        min_capital=30000,
         expected_daily_return_pct=0.20,
     ),
 
@@ -118,7 +118,7 @@ PRESETS: dict[str, GridPreset] = {
         max_positions=4,
         trading_fee_rate=0.001,
         risk_level="low",
-        min_capital_usdt=100,
+        min_capital=100,
         expected_daily_return_pct=0.15,
     ),
     "bnb-conservative": GridPreset(
@@ -136,7 +136,7 @@ PRESETS: dict[str, GridPreset] = {
         max_positions=4,
         trading_fee_rate=0.00075,  # BNB支払いで割引
         risk_level="low",
-        min_capital_usdt=100,
+        min_capital=100,
         expected_daily_return_pct=0.15,
     ),
 
@@ -156,7 +156,7 @@ PRESETS: dict[str, GridPreset] = {
         max_positions=5,
         trading_fee_rate=0.001,
         risk_level="medium",
-        min_capital_usdt=200,
+        min_capital=200,
         expected_daily_return_pct=0.25,
     ),
     "sol-balanced": GridPreset(
@@ -174,7 +174,7 @@ PRESETS: dict[str, GridPreset] = {
         max_positions=5,
         trading_fee_rate=0.001,
         risk_level="medium",
-        min_capital_usdt=150,
+        min_capital=150,
         expected_daily_return_pct=0.30,
     ),
     "bnb-balanced": GridPreset(
@@ -192,7 +192,7 @@ PRESETS: dict[str, GridPreset] = {
         max_positions=5,
         trading_fee_rate=0.00075,
         risk_level="medium",
-        min_capital_usdt=150,
+        min_capital=150,
         expected_daily_return_pct=0.20,
     ),
 
@@ -212,7 +212,7 @@ PRESETS: dict[str, GridPreset] = {
         max_positions=6,
         trading_fee_rate=0.001,
         risk_level="high",
-        min_capital_usdt=200,
+        min_capital=200,
         expected_daily_return_pct=0.45,
     ),
     "doge-aggressive": GridPreset(
@@ -230,7 +230,7 @@ PRESETS: dict[str, GridPreset] = {
         max_positions=6,
         trading_fee_rate=0.001,
         risk_level="high",
-        min_capital_usdt=100,
+        min_capital=100,
         expected_daily_return_pct=0.40,
     ),
 
@@ -250,7 +250,7 @@ PRESETS: dict[str, GridPreset] = {
         max_positions=3,
         trading_fee_rate=0.001,
         risk_level="low",
-        min_capital_usdt=30,
+        min_capital=30,
         expected_daily_return_pct=0.10,
     ),
     "doge-micro": GridPreset(
@@ -268,7 +268,7 @@ PRESETS: dict[str, GridPreset] = {
         max_positions=3,
         trading_fee_rate=0.001,
         risk_level="medium",
-        min_capital_usdt=30,
+        min_capital=30,
         expected_daily_return_pct=0.15,
     ),
 
@@ -288,7 +288,7 @@ PRESETS: dict[str, GridPreset] = {
         max_positions=5,
         trading_fee_rate=0.001,
         risk_level="low",
-        min_capital_usdt=1000,
+        min_capital=1000,
         expected_daily_return_pct=0.10,
     ),
     "eth-whale": GridPreset(
@@ -306,7 +306,7 @@ PRESETS: dict[str, GridPreset] = {
         max_positions=7,
         trading_fee_rate=0.001,
         risk_level="low",
-        min_capital_usdt=1000,
+        min_capital=1000,
         expected_daily_return_pct=0.20,
     ),
 }
@@ -361,7 +361,7 @@ def recommend_for_capital(capital_usdt: float) -> list[GridPreset]:
     """資金額に基づいて推奨プリセットを返す"""
     suitable = []
     for preset in PRESETS.values():
-        if capital_usdt >= preset.min_capital_usdt:
+        if capital_usdt >= preset.min_capital:
             suitable.append(preset)
     # 資金に近い順（投資効率が良い順）にソート
     suitable.sort(key=lambda p: abs(p.investment_amount - capital_usdt))

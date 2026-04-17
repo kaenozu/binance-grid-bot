@@ -77,11 +77,11 @@ class Settings:
         if not cls.BINANCE_API_SECRET or cls.BINANCE_API_SECRET == "your_api_secret_here":
             errors.append("BINANCE_API_SECRET が設定されていません")
 
-        if cls.BINANCE_API_KEY and not re.match(r"^[A-Za-z0-9]+$", cls.BINANCE_API_KEY):
-            errors.append("BINANCE_API_KEY の形式が不正です（英数字のみ）")
+        if cls.BINANCE_API_KEY and not re.match(r"^[A-Za-z0-9+/]+$", cls.BINANCE_API_KEY):
+            errors.append("BINANCE_API_KEY の形式が不正です（英数字と記号 +/ のみ）")
 
-        if cls.BINANCE_API_SECRET and not re.match(r"^[A-Za-z0-9]+$", cls.BINANCE_API_SECRET):
-            errors.append("BINANCE_API_SECRET の形式が不正です（英数字のみ）")
+        if cls.BINANCE_API_SECRET and not re.match(r"^[A-Za-z0-9+/]+$", cls.BINANCE_API_SECRET):
+            errors.append("BINANCE_API_SECRET の形式が不正です（英数字と記号 +/ のみ）")
 
         if cls.GRID_COUNT < 0:
             errors.append("GRID_COUNT は 0 以上である必要があります（0=自動、2以上で手動）")

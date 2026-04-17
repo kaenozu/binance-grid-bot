@@ -128,7 +128,7 @@ def _show_presets():
         print(
             f"    損切り={p.stop_loss_percentage}%, "
             f"最大DD={p.max_drawdown_pct}%, "
-            f"最低資金={p.min_capital_usdt} USDT"
+            f"最低資金={p.min_capital} USDT"
         )
         print(f"    {risk} | 推定日次リターン: ~{p.expected_daily_return_pct:.2f}%")
         print()
@@ -183,9 +183,8 @@ def _show_recommendations(capital_usdt: float):
 
 
 def _apply_preset(preset_name: str):
-    """プリセット設定を環境変数に適用"""
-    import os
-    from config.presets import get_preset, preset_to_env
+    """プリセット設定をSettingsに適用"""
+    from config.presets import get_preset
 
     preset = get_preset(preset_name)
     if not preset:
@@ -193,11 +192,7 @@ def _apply_preset(preset_name: str):
         print("利用可能なプリセットを確認: python main.py --list-presets")
         sys.exit(1)
 
-    env_vars = preset_to_env(preset)
-    for key, value in env_vars.items():
-        os.environ[key] = value
-
-    # Settings クラスのクラス変数も更新
+    # Settings クラスのクラス変数を直接更新
     from config.settings import Settings
 
     Settings.TRADING_SYMBOL = preset.symbol
@@ -238,9 +233,7 @@ def main():
         default=None,
         help=(
             "プリセット設定を使用 (例: --preset eth-balanced)。"
-            "利用可能: eth-conservative, eth-balanced, sol-balanced, "
-            "bnb-balanced, sol-aggressive, doge-aggressive, "
-            "xrp-micro, doge-micro, btc-whale, eth-whale"
+            "利用可能なプリセットは --list-presets で確認できます。"
         ),
     )
     parser.add_argument(

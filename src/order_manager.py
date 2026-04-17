@@ -15,7 +15,7 @@ from utils.precision import quantize_down, quantize_up
 logger = setup_logger("order_manager")
 
 
-def _adjust_price(price: float, tick_size: float, side: str = "BUY") -> float:
+def adjust_price(price: float, tick_size: float, side: str = "BUY") -> float:
     """価格をtick_sizeの倍数に調整
 
     BUY: 切り下げ（より低い指値で約定し易く）
@@ -338,7 +338,7 @@ class OrderManager:
         if quantity <= 0:
             return None
 
-        adjusted_price = _adjust_price(price, symbol_info["tick_size"], side=side)
+        adjusted_price = adjust_price(price, symbol_info["tick_size"], side=side)
         order = self.client.place_order(
             symbol=self.strategy.symbol,
             side=side,

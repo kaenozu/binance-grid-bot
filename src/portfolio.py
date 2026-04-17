@@ -168,7 +168,6 @@ class Portfolio:
                     # 月次/年次利益を更新
                     self._update_periodic_profit(profit, trade.timestamp)
 
-        # ロック外で永続化（DB I/O はロック保持しない）
         try:
             persistence_module.save_trade(
                 timestamp=trade.timestamp,

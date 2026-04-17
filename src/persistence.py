@@ -30,23 +30,27 @@ def set_db_path(path: Path | str):
     競合状態を引き起こす可能性があります。
     """
     global DB_PATH, _db_initialized, _connection, _TEST_MODE
-    with _db_lock:
-        _TEST_MODE = True
-        DB_PATH = Path(path)
-        _db_initialized = False
-        if _connection:
-            try:
-                _connection.close()
-            except Exception:
-                pass
-            _connection = None
+    _TEST_MODE = True
+    DB_PATH = Path(path)
+    _db_initialized = False
+    old_conn = _connection
+    _connection = None
+    if old_conn:
+        try:
+            old_conn.close()
+        except Exception:
+            pass
+    logger.info(f"DBパス切替: {path}")
 
 
 def _ensure_db():
     global _db_initialized, _connection
     with _db_lock:
+        logger.debug("_ensure_db: got lock")
         if _db_initialized and _connection is not None:
+            logger.debug("_ensure_db: already initialized, returning")
             return
+        logger.debug(f"_ensure_db: creating DB at {DB_PATH}")
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False)
         conn.execute("PRAGMA journal_mode=WAL")
@@ -142,14 +146,14 @@ def _migrate_portfolio_stats(conn: sqlite3.Connection):
 def _reset_connection():
     """接続をリセット（テスト用）"""
     global _connection, _db_initialized
-    with _db_lock:
-        if _connection:
-            try:
-                _connection.close()
-            except Exception:
-                pass
-            _connection = None
-        _db_initialized = False
+    if _connection:
+        try:
+            _connection.close()
+        except Exception:
+            pass
+    _connection = None
+    _db_initialized = False
+    logger.info("DB接続リセット完了")
 
 
 def save_trade(
@@ -325,6 +329,7 @@ def update_trade_matched(order_id: int, matched: bool):
                 "UPDATE trades SET matched = ? WHERE order_id = ?",
                 (int(matched), order_id),
             )
+    logger.debug(f"matchedフラグ更新: order_id={order_id}, matched={matched}")
 
 
 def load_trades() -> list[dict]:
