@@ -50,6 +50,7 @@ def _ensure_db():
             return
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
         _connection = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False)
+        _connection.execute("PRAGMA journal_mode=WAL")  # WALモード有効化
         _connection.row_factory = sqlite3.Row
         _connection.execute("""
                 CREATE TABLE IF NOT EXISTS trades (

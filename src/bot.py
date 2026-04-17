@@ -147,13 +147,10 @@ class GridBot:
     def start(self):
         """ボット開始"""
         logger.info("=" * 60)
-        logger.info("グリッドボット 開始")
+        logger.info(f"グリッドボット開始: {self.symbol}")
         logger.info("=" * 60)
 
         self.is_running = True
-        self._last_status_time = time.time()
-        self._last_detail_time = time.time()
-
         if self.ws_client:
             self.ws_client.start_price_stream(self.symbol)
 
@@ -161,65 +158,44 @@ class GridBot:
 
         try:
             while self.is_running:
-                self._tick()
+                self._run_tick_cycle()
                 time.sleep(Settings.CHECK_INTERVAL)
         except KeyboardInterrupt:
-            logger.info("KeyboardInterrupt 検出。ボット停止中...")
+            logger.info("手動停止信号を検知")
         except Exception as e:
-            logger.error(f"予期せぬエラー: {e}", exc_info=True)
+            logger.error(f"メインループで予期せぬエラー: {e}", exc_info=True)
         finally:
             if self.is_running:
                 self.stop()
 
-    def _update_price(self):
-        """現在価格を更新"""
-        ws_price = self.ws_client.current_price if self.ws_client else None
-        if ws_price is not None:
-            self.current_price = ws_price
-        else:
-            self.current_price = self.client.get_symbol_price(self.symbol)
-        self.strategy.update_current_price(self.current_price)
-
-    def _tick(self) -> None:
-        """1 ティック処理"""
+    def _run_tick_cycle(self) -> None:
+        """1ティックの処理サイクルを実行"""
         try:
             self._update_price()
             if not self._validate_price(self.current_price):
                 return
 
-            if self._check_halt_conditions():
+            if self.risk_manager.should_halt_trading(self.current_price):
+                self._emergency_stop()
                 return
 
             self._execute_trading_logic()
-            self._run_maintenance_tasks()
+            self._perform_maintenance()
+            self.consecutive_errors = 0
 
         except Exception as e:
             self._handle_tick_error(e)
 
-    def _check_halt_conditions(self) -> bool:
-        """取引停止条件のチェック"""
-        if self.risk_manager.should_halt_trading(self.current_price):
-            logger.warning("リスク管理により取引を停止します")
-            self._emergency_stop()
-            self.consecutive_errors = 0
-            return True
-        return False
-
-    def _execute_trading_logic(self) -> None:
-        """取引実行ロジックの管理"""
-        self._process_fills()
-        self.portfolio.calculate_unrealized_pnl(self.current_price)
-        self.consecutive_errors = 0
-
-        if not self.strategy.is_within_grid_range(self.current_price):
-            self._handle_grid_shift()
-
-    def _run_maintenance_tasks(self) -> None:
-        """定期メンテナンスの実行"""
+    def _perform_maintenance(self) -> None:
+        """状態の永続化とステータス出力の定期メンテナンス"""
         now = time.time()
         if now - self._last_status_time >= Settings.STATUS_DISPLAY_INTERVAL:
             self._display_status()
             self._last_status_time = now
+        
+        if now - self._last_persist_time >= Settings.PERSIST_INTERVAL:
+            self._persist_state()
+            self._last_persist_time = now
 
     def _handle_tick_error(self, e: Exception) -> None:
         """ティック処理エラーのハンドリング"""

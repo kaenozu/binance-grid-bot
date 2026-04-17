@@ -74,6 +74,9 @@ class Settings:
         if not cls.BINANCE_API_SECRET or cls.BINANCE_API_SECRET == "your_api_secret_here":
             errors.append("BINANCE_API_SECRET が設定されていません")
 
+        if not cls.USE_TESTNET and not cls.CLOSE_ON_STOP:
+            errors.append("本番運用時は CLOSE_ON_STOP を True にする必要があります")
+
         if cls.GRID_COUNT < 2:
             errors.append("GRID_COUNT は 2 以上である必要があります")
 
