@@ -3,8 +3,7 @@
 ファイルの役割: グリッド状態・ポートフォリオ統計・取引履歴の保存と復元
 なぜ存在するか: ボットの再起動時に取引状態を復元するため
 関連ファイル: bot.py（メインループ）, portfolio.py（統計）, grid_strategy.py（グリッド状態）
-注意: このモジュールはメインボットループ（シングルスレッド）からの使用を想定。
-マルチスレッド環境では、呼び出し元で同期化を行うこと。
+注意: スレッド安全性のため _db_lock による排他制御を行う。
 """
 
 import json
@@ -53,63 +52,70 @@ def _ensure_db():
             return
         logger.debug(f"_ensure_db: creating DB at {DB_PATH}")
         DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _connection = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False)
-        _connection.row_factory = sqlite3.Row
-        _connection.execute("""
-                CREATE TABLE IF NOT EXISTS trades (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    timestamp TEXT NOT NULL,
-                    symbol TEXT NOT NULL,
-                    side TEXT NOT NULL,
-                    price REAL NOT NULL,
-                    quantity REAL NOT NULL,
-                    order_id INTEGER NOT NULL,
-                    grid_level INTEGER NOT NULL,
-                    profit REAL NOT NULL DEFAULT 0,
-                    matched INTEGER NOT NULL DEFAULT 0
-                )
-            """)
-        _connection.execute("""
-                CREATE TABLE IF NOT EXISTS grid_states (
-                    symbol TEXT NOT NULL,
-                    grid_level INTEGER NOT NULL,
-                    buy_price REAL NOT NULL,
-                    sell_price TEXT,
-                    buy_order_id INTEGER,
-                    sell_order_id INTEGER,
-                    position_filled INTEGER NOT NULL DEFAULT 0,
-                    PRIMARY KEY (symbol, grid_level)
-                )
-            """)
-        _connection.execute("""
-                CREATE TABLE IF NOT EXISTS portfolio_stats (
-                    id INTEGER PRIMARY KEY CHECK (id = 1),
-                    initial_balance REAL DEFAULT 0,
-                    current_balance REAL DEFAULT 0,
-                    total_profit REAL DEFAULT 0,
-                    realized_profit REAL DEFAULT 0,
-                    unrealized_profit REAL DEFAULT 0,
-                    total_trades INTEGER DEFAULT 0,
-                    winning_trades INTEGER DEFAULT 0,
-                    losing_trades INTEGER DEFAULT 0,
-                    settled_trades INTEGER DEFAULT 0,
-                    win_rate REAL DEFAULT 0,
-                    avg_profit_per_trade REAL DEFAULT 0,
-                    total_fees REAL DEFAULT 0,
-                    start_time TEXT,
-                    last_update TEXT,
-                    peak_balance REAL DEFAULT 0,
-                    max_drawdown REAL DEFAULT 0,
-                    max_drawdown_pct REAL DEFAULT 0,
-                    sharpe_ratio REAL DEFAULT 0,
-                    monthly_profit TEXT DEFAULT '{}',
-                    yearly_profit TEXT DEFAULT '{}'
-                )
-            """)
-        _connection.commit()
-        _migrate_portfolio_stats(_connection)
+        conn = sqlite3.connect(str(DB_PATH), timeout=30, check_same_thread=False)
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        conn.row_factory = sqlite3.Row
+        _create_tables(conn)
+        _migrate_portfolio_stats(conn)
+        _connection = conn
         _db_initialized = True
         logger.info(f"DB初期化完了: {DB_PATH}")
+
+
+def _create_tables(conn: sqlite3.Connection):
+    conn.execute("""
+            CREATE TABLE IF NOT EXISTS trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                price REAL NOT NULL,
+                quantity REAL NOT NULL,
+                order_id INTEGER NOT NULL,
+                grid_level INTEGER NOT NULL,
+                profit REAL NOT NULL DEFAULT 0,
+                matched INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+    conn.execute("""
+            CREATE TABLE IF NOT EXISTS grid_states (
+                symbol TEXT NOT NULL,
+                grid_level INTEGER NOT NULL,
+                buy_price REAL NOT NULL,
+                sell_price TEXT,
+                buy_order_id INTEGER,
+                sell_order_id INTEGER,
+                position_filled INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (symbol, grid_level)
+            )
+        """)
+    conn.execute("""
+            CREATE TABLE IF NOT EXISTS portfolio_stats (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                initial_balance REAL DEFAULT 0,
+                current_balance REAL DEFAULT 0,
+                total_profit REAL DEFAULT 0,
+                realized_profit REAL DEFAULT 0,
+                unrealized_profit REAL DEFAULT 0,
+                total_trades INTEGER DEFAULT 0,
+                winning_trades INTEGER DEFAULT 0,
+                losing_trades INTEGER DEFAULT 0,
+                settled_trades INTEGER DEFAULT 0,
+                win_rate REAL DEFAULT 0,
+                avg_profit_per_trade REAL DEFAULT 0,
+                total_fees REAL DEFAULT 0,
+                start_time TEXT,
+                last_update TEXT,
+                peak_balance REAL DEFAULT 0,
+                max_drawdown REAL DEFAULT 0,
+                max_drawdown_pct REAL DEFAULT 0,
+                sharpe_ratio REAL DEFAULT 0,
+                monthly_profit TEXT DEFAULT '{}',
+                yearly_profit TEXT DEFAULT '{}'
+            )
+        """)
+    conn.commit()
 
 
 def _get_connection() -> sqlite3.Connection:
@@ -205,42 +211,46 @@ def save_grid_states(symbol: str, grids: list):
 
 
 def save_portfolio_stats(stats):
+    _STAT_COLUMNS = [
+        "initial_balance",
+        "current_balance",
+        "total_profit",
+        "realized_profit",
+        "unrealized_profit",
+        "total_trades",
+        "winning_trades",
+        "losing_trades",
+        "settled_trades",
+        "win_rate",
+        "avg_profit_per_trade",
+        "total_fees",
+        "peak_balance",
+        "max_drawdown",
+        "max_drawdown_pct",
+        "sharpe_ratio",
+    ]
+    _JSON_COLUMNS = {"monthly_profit", "yearly_profit"}
+    _ISO_COLUMNS = {"start_time", "last_update"}
+
     with _db_lock:
         conn = _get_connection()
-        monthly_json = json.dumps(getattr(stats, 'monthly_profit', {}))
-        yearly_json = json.dumps(getattr(stats, 'yearly_profit', {}))
+        values: list = []
+        for col in _STAT_COLUMNS:
+            values.append(getattr(stats, col, 0))
+        for col in _JSON_COLUMNS:
+            values.append(json.dumps(getattr(stats, col, {})))
+        for col in _ISO_COLUMNS:
+            val = getattr(stats, col, None)
+            values.append(val.isoformat() if val else None)
+
+        col_names = _STAT_COLUMNS + list(_JSON_COLUMNS) + list(_ISO_COLUMNS)
+        placeholders = ", ".join(["?"] * len(col_names))
+        col_str = ", ".join(col_names)
         with conn:
             conn.execute("DELETE FROM portfolio_stats WHERE id = 1")
             conn.execute(
-                "INSERT INTO portfolio_stats "
-                "(id, initial_balance, current_balance, total_profit, realized_profit, "
-                "unrealized_profit, total_trades, winning_trades, losing_trades, "
-                "settled_trades, win_rate, avg_profit_per_trade, total_fees, "
-                "start_time, last_update, peak_balance, max_drawdown, "
-                "max_drawdown_pct, sharpe_ratio, monthly_profit, yearly_profit) "
-                "VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    stats.initial_balance,
-                    stats.current_balance,
-                    stats.total_profit,
-                    stats.realized_profit,
-                    stats.unrealized_profit,
-                    stats.total_trades,
-                    stats.winning_trades,
-                    stats.losing_trades,
-                    stats.settled_trades,
-                    stats.win_rate,
-                    stats.avg_profit_per_trade,
-                    stats.total_fees,
-                    stats.start_time.isoformat() if stats.start_time else None,
-                    stats.last_update.isoformat() if stats.last_update else None,
-                    stats.peak_balance,
-                    stats.max_drawdown,
-                    stats.max_drawdown_pct,
-                    stats.sharpe_ratio,
-                    monthly_json,
-                    yearly_json,
-                ),
+                f"INSERT INTO portfolio_stats (id, {col_str}) VALUES (1, {placeholders})",
+                values,
             )
 
 
@@ -271,6 +281,27 @@ def load_grid_states(symbol: str) -> list[dict] | None:
 
 
 def load_portfolio_stats() -> dict | None:
+    _NUMERIC_COLUMNS = [
+        "initial_balance",
+        "current_balance",
+        "total_profit",
+        "realized_profit",
+        "unrealized_profit",
+        "total_trades",
+        "winning_trades",
+        "losing_trades",
+        "settled_trades",
+        "win_rate",
+        "avg_profit_per_trade",
+        "total_fees",
+        "peak_balance",
+        "max_drawdown",
+        "max_drawdown_pct",
+        "sharpe_ratio",
+    ]
+    _JSON_COLUMNS = {"monthly_profit", "yearly_profit"}
+    _ISO_COLUMNS = {"start_time", "last_update"}
+
     with _db_lock:
         if not DB_PATH.exists():
             return None
@@ -279,28 +310,14 @@ def load_portfolio_stats() -> dict | None:
     if not rows:
         return None
     row = rows[0]
-    return {
-        "initial_balance": row["initial_balance"],
-        "current_balance": row["current_balance"],
-        "total_profit": row["total_profit"],
-        "realized_profit": row["realized_profit"],
-        "unrealized_profit": row["unrealized_profit"],
-        "total_trades": row["total_trades"],
-        "winning_trades": row["winning_trades"],
-        "losing_trades": row["losing_trades"],
-        "settled_trades": row["settled_trades"],
-        "win_rate": row["win_rate"],
-        "avg_profit_per_trade": row["avg_profit_per_trade"],
-        "total_fees": row["total_fees"],
-        "start_time": datetime.fromisoformat(row["start_time"]) if row["start_time"] else None,
-        "last_update": datetime.fromisoformat(row["last_update"]) if row["last_update"] else None,
-        "peak_balance": row["peak_balance"],
-        "max_drawdown": row["max_drawdown"],
-        "max_drawdown_pct": row["max_drawdown_pct"],
-        "sharpe_ratio": row["sharpe_ratio"],
-        "monthly_profit": json.loads(row["monthly_profit"]) if row["monthly_profit"] else {},
-        "yearly_profit": json.loads(row["yearly_profit"]) if row["yearly_profit"] else {},
-    }
+    result: dict = {}
+    for col in _NUMERIC_COLUMNS:
+        result[col] = row[col]
+    for col in _JSON_COLUMNS:
+        result[col] = json.loads(row[col]) if row[col] else {}
+    for col in _ISO_COLUMNS:
+        result[col] = datetime.fromisoformat(row[col]) if row[col] else None
+    return result
 
 
 def update_trade_matched(order_id: int, matched: bool):

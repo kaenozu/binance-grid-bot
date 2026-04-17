@@ -17,6 +17,7 @@ from urllib3.util.retry import Retry
 from config.settings import Settings
 from src.api_weight import APIWeightTracker
 from utils.logger import setup_logger
+from utils.precision import get_precision, quantize_down, quantize_up, format_decimal
 
 logger = setup_logger("binance_client")
 
@@ -27,6 +28,16 @@ SYMBOL_CACHE_TTL = 300  # シンボル情報のキャッシュ有効期限（秒
 
 class BinanceAPIError(Exception):
     """Binance API 関連のエラー"""
+
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        endpoint: str | None = None,
+    ):
+        super().__init__(message)
+        self.status_code = status_code
+        self.endpoint = endpoint
 
 
 class BinanceClient:
@@ -41,6 +52,7 @@ class BinanceClient:
         self.api_secret = Settings.BINANCE_API_SECRET
         self._symbol_cache: dict[str, tuple[dict, float]] = {}
         self._weight_tracker = weight_tracker
+        self._time_offset_ms = 0
 
         self.session = requests.Session()
         self.session.headers.update(
@@ -54,6 +66,9 @@ class BinanceClient:
             "https://",
             HTTPAdapter(max_retries=Retry(total=0, connect=0, read=0, redirect=0)),
         )
+
+        self._sync_server_time()
+        self._check_time_offset()
 
         logger.info(f"Binance クライアント初期化完了 (Testnet: {Settings.USE_TESTNET})")
 
@@ -80,9 +95,14 @@ class BinanceClient:
 
     def _sign_params(self, params: dict) -> None:
         """params をインプレースで署名（timestamp と signature を付加）"""
-        params["timestamp"] = int(time.time() * 1000)
+        params.pop("signature", None)
+        params["timestamp"] = self._current_timestamp_ms()
         query_string = urlencode(params)
         params["signature"] = self._generate_signature(query_string)
+
+    def _current_timestamp_ms(self) -> int:
+        """サーバー時刻との差分を反映したタイムスタンプを返す"""
+        return int(time.time() * 1000) + self._time_offset_ms
 
     def _make_request(
         self,
@@ -145,14 +165,44 @@ class BinanceClient:
                 time.sleep(wait)
                 continue
 
+            if response.status_code == 410 and endpoint.endswith("/userDataStream"):
+                body = (response.text or "").strip() or "<empty>"
+                logger.warning(
+                    "listenKey endpoint が 410 を返しました。"
+                    f"endpoint={endpoint}, body={body}"
+                )
+                raise BinanceAPIError(
+                    "listenKey endpoint unavailable (410)",
+                    status_code=410,
+                    endpoint=endpoint,
+                )
+
+            if signed and response.status_code == 400 and self._is_timestamp_error(response):
+                if not self._can_retry(attempt, "timestampエラー"):
+                    raise BinanceAPIError("timestampエラー（再同期後も失敗）")
+                logger.warning("timestampズレを検知。サーバー時刻を再同期して再試行します")
+                self._sync_server_time()
+                time.sleep(self._backoff(attempt))
+                continue
+
             # 4xx ── リトライしない（クライアントエラー）
             try:
                 response.raise_for_status()
             except requests.exceptions.HTTPError as e:
                 body = e.response.text if e.response else ""
                 status = getattr(e.response, "status_code", 0)
-                logger.error(f"クライアントエラー ({status}): {body}")
-                raise BinanceAPIError(f"クライアントエラー: {status} - {body}") from e
+                safe_params = {
+                    k: ("***MASKED***" if k == "signature" else v) for k, v in params.items()
+                }
+                logger.error(
+                    f"4xxエラー ({status}): {body} | "
+                    f"method={method} endpoint={endpoint} params={safe_params}"
+                )
+                raise BinanceAPIError(
+                    f"クライアントエラー: {status} - {body}",
+                    status_code=status,
+                    endpoint=endpoint,
+                ) from e
 
             # raise_for_status が通った（到達不能だが型チェッカー対策）
             return response.json()
@@ -173,6 +223,40 @@ class BinanceClient:
     def _backoff(attempt: int, cap: float = 60.0) -> float:
         return min(RETRY_DELAY * (2 ** min(attempt, 5)), cap)
 
+    def _sync_server_time(self) -> None:
+        """Binance サーバー時刻との差分を補正する"""
+        try:
+            url = f"{self.base_url}/api/v3/time"
+            response = self._send_request("GET", url, {})
+            if response.status_code != 200:
+                logger.warning(f"サーバー時刻取得失敗: HTTP {response.status_code}")
+                return
+            server_time = response.json().get("serverTime")
+            if not server_time:
+                logger.warning("サーバー時刻レスポンスに serverTime がありません")
+                return
+            local_time = int(time.time() * 1000)
+            self._time_offset_ms = int(server_time) - local_time
+            logger.info(f"サーバー時刻を同期: offset={self._time_offset_ms}ms")
+        except Exception as e:
+            logger.warning(f"サーバー時刻同期失敗: {e}")
+
+    @staticmethod
+    def _is_timestamp_error(response: requests.Response) -> bool:
+        """-1021 系の時刻ズレエラーか判定する"""
+        body_text = response.text or ""
+        if "-1021" in body_text or "timestamp" in body_text.lower():
+            return True
+        try:
+            payload = response.json()
+        except Exception:
+            return False
+        if isinstance(payload, dict):
+            code = payload.get("code")
+            message = str(payload.get("msg", ""))
+            return code == -1021 or "timestamp" in message.lower()
+        return False
+
     def _send_request(self, method: str, url: str, params: dict) -> requests.Response:
         """HTTP リクエストを送信（リトライなしの単発リクエスト）"""
         try:
@@ -187,6 +271,68 @@ class BinanceClient:
             raise  # _make_request 側で catch してリトライ
         except (requests.exceptions.Timeout, requests.exceptions.RequestException) as e:
             raise BinanceAPIError(f"リクエストエラー: {e}") from e
+
+    def _check_time_offset(self) -> None:
+        """時刻差分が許容範囲内かチェック（起動時）"""
+        abs_offset = abs(self._time_offset_ms)
+        if abs_offset > 5000:
+            logger.warning(
+                f"サーバー時刻との差分が大きいです: {self._time_offset_ms}ms. "
+                "注文がリジェクトされる可能性があります。"
+            )
+        else:
+            logger.info(f"時刻差分チェック OK: {self._time_offset_ms}ms")
+
+    def _validate_order_request(
+        self, symbol: str, side: str, quantity: float, price: float | None, symbol_info: dict | None
+    ) -> tuple[float, float | None]:
+        """Binance の制約に合わせて注文パラメータを事前検証する"""
+        if quantity <= 0:
+            raise BinanceAPIError(f"{side} 注文の数量が0以下です")
+
+        if not symbol_info:
+            return quantity, price
+
+        step_size = float(symbol_info.get("step_size", 0) or 0)
+        min_qty = float(symbol_info.get("min_qty", 0) or 0)
+        max_qty = float(symbol_info.get("max_qty", 0) or 0)
+        tick_size = float(symbol_info.get("tick_size", 0) or 0)
+        min_notional = float(symbol_info.get("min_notional", 0) or 0)
+
+        normalized_qty = quantize_down(quantity, step_size) if step_size > 0 else quantity
+        if min_qty > 0 and normalized_qty < min_qty:
+            normalized_qty = quantize_up(min_qty, step_size) if step_size > 0 else min_qty
+        if max_qty > 0 and normalized_qty > max_qty:
+            raise BinanceAPIError(
+                f"{side} 注文の数量が最大数量を上回っています: {normalized_qty} > {max_qty}"
+            )
+
+        normalized_price = price
+        if price is not None and tick_size > 0:
+            rounding = "down" if side == "BUY" else "up"
+            normalized_price = quantize_down(price, tick_size) if rounding == "down" else quantize_up(price, tick_size)
+
+        if price is not None and min_notional > 0:
+            normalized_price_val = normalized_price if normalized_price is not None else price
+            notional = normalized_qty * normalized_price_val
+            if notional < min_notional:
+                if price is None or normalized_price_val <= 0:
+                    raise BinanceAPIError(
+                        f"{side} 注文の額が最小名目金額を下回っています: {notional:.8f} < {min_notional}"
+                    )
+                needed_qty = quantize_up(min_notional / normalized_price_val, step_size) if step_size > 0 else (min_notional / normalized_price_val)
+                if max_qty > 0 and needed_qty > max_qty:
+                    raise BinanceAPIError(
+                        f"{side} 注文の数量が最大数量を上回っています: {needed_qty} > {max_qty}"
+                    )
+                normalized_qty = needed_qty
+                notional = normalized_qty * normalized_price_val
+                if notional < min_notional:
+                    raise BinanceAPIError(
+                        f"{side} 注文の額が最小名目金額を下回っています: {notional:.8f} < {min_notional}"
+                    )
+
+        return normalized_qty, normalized_price
 
     # ── 公開 API ──────────────────────────────────────────────────────
 
@@ -207,10 +353,14 @@ class BinanceClient:
         data = self._make_request("GET", "/api/v3/ticker/price", {"symbol": symbol})
         return float(data["price"])
 
-    def get_symbol_info(self, symbol: str) -> dict | None:
+    def invalidate_symbol_cache(self, symbol: str) -> None:
+        """シンボル情報キャッシュを破棄する"""
+        self._symbol_cache.pop(symbol, None)
+
+    def get_symbol_info(self, symbol: str, refresh: bool = False) -> dict | None:
         """取引ペアの情報を取得（キャッシュ付き、TTL期限切れで更新）"""
         now = time.time()
-        if symbol in self._symbol_cache:
+        if not refresh and symbol in self._symbol_cache:
             cached_info, cached_time = self._symbol_cache[symbol]
             if now - cached_time < SYMBOL_CACHE_TTL:
                 return cached_info
@@ -239,7 +389,9 @@ class BinanceClient:
             "min_qty": float(filters.get("LOT_SIZE", {}).get("minQty", 0)),
             "max_qty": float(filters.get("LOT_SIZE", {}).get("maxQty", 0)),
             "step_size": float(filters.get("LOT_SIZE", {}).get("stepSize", 0)),
-            "min_notional": float(filters.get("MIN_NOTIONAL", {}).get("minNotional", 0)),
+            "min_notional": float(
+                (filters.get("MIN_NOTIONAL") or filters.get("NOTIONAL") or {}).get("minNotional", 0)
+            ),
             "tick_size": float(filters.get("PRICE_FILTER", {}).get("tickSize", 0)),
         }
 
@@ -247,19 +399,55 @@ class BinanceClient:
         self, symbol: str, side: str, quantity: float, price: float | None = None
     ) -> dict:
         """注文を出す"""
-        params = {
-            "symbol": symbol,
-            "side": side,
-            "type": "LIMIT" if price else "MARKET",
-            "quantity": self._format_value(quantity, 8),
-            "timeInForce": "GTC" if price else None,
-        }
-        if price:
-            params["price"] = self._format_value(price, 8)
-        params = {k: v for k, v in params.items() if v is not None}
+        for attempt in range(2):
+            symbol_info = self.get_symbol_info(symbol, refresh=attempt > 0)
+            price_precision = 8
+            if symbol_info and symbol_info.get("tick_size"):
+                price_precision = get_precision(symbol_info["tick_size"])
 
-        logger.info(f"注文実行: {side} {quantity} {symbol} @ {price or 'MARKET'}")
-        return self._make_request("POST", "/api/v3/order", params, signed=True)
+            quantity_precision = 8
+            if symbol_info and symbol_info.get("step_size"):
+                quantity_precision = get_precision(symbol_info["step_size"])
+
+            normalized_qty, normalized_price = self._validate_order_request(
+                symbol, side, quantity, price, symbol_info
+            )
+
+            params = {
+                "symbol": symbol,
+                "side": side,
+                "type": "LIMIT" if normalized_price else "MARKET",
+                "quantity": self._format_value(normalized_qty, quantity_precision),
+                "timeInForce": "GTC" if normalized_price else None,
+            }
+            if normalized_price:
+                params["price"] = self._format_value(normalized_price, price_precision)
+            params = {k: v for k, v in params.items() if v is not None}
+
+            price_str = (
+                self._format_value(normalized_price, price_precision)
+                if normalized_price
+                else "MARKET"
+            )
+            logger.info(
+                f"注文実行: {side} {normalized_qty} {symbol} @ {price_str} (raw={price})"
+            )
+            try:
+                return self._make_request("POST", "/api/v3/order", params, signed=True)
+            except BinanceAPIError as e:
+                if attempt == 0 and self._should_refresh_symbol_info(e):
+                    logger.warning(
+                        "注文が銘柄フィルターと一致しません。exchangeInfo を再取得して再試行します "
+                        f"(status={e.status_code}, endpoint={e.endpoint})"
+                    )
+                    self.invalidate_symbol_cache(symbol)
+                    continue
+                logger.error(
+                    f"注文失敗詳細: {side} {normalized_qty} {symbol} @ {price_str} -> {e}"
+                )
+                raise
+
+        raise BinanceAPIError(f"注文失敗: {side} {symbol}")
 
     def cancel_order(self, symbol: str, order_id: int) -> dict:
         """注文をキャンセル"""
@@ -278,9 +466,49 @@ class BinanceClient:
         params = {"symbol": symbol, "orderId": order_id}
         return self._make_request("GET", "/api/v3/order", params, signed=True)
 
+    # ── User Data Stream ─────────────────────────────────────────────
+
+    def create_listen_key(self) -> str:
+        """ユーザーデータストリーム用 listenKey を作成"""
+        data = self._make_request("POST", "/api/v3/userDataStream")
+        listen_key = data["listenKey"]
+        logger.info("listenKey 作成完了")
+        return listen_key
+
+    def keepalive_listen_key(self, listen_key: str):
+        """listenKey の有効期限を延長（30分間有効）"""
+        self._make_request("PUT", "/api/v3/userDataStream", {"listenKey": listen_key})
+        logger.debug("listenKey 延長完了")
+
+    def close_listen_key(self, listen_key: str):
+        """listenKey を閉じる（ストリーム終了時）"""
+        self._make_request("DELETE", "/api/v3/userDataStream", {"listenKey": listen_key})
+        logger.info("listenKey 閉鎖完了")
+
     # ── ユーティリティ ────────────────────────────────────────────────
 
     @staticmethod
     def _format_value(value: float, precision: int) -> str:
-        """指定精度でフォーマット（不要なゼロを除去）"""
-        return f"{value:.{precision}f}".rstrip("0").rstrip(".")
+        """指定精度でフォーマット（Decimal使用、末尾0削除）"""
+        formatted = format_decimal(value, precision)
+        if precision > 0:
+            formatted = formatted.rstrip("0").rstrip(".")
+        return formatted
+
+    @staticmethod
+    def _should_refresh_symbol_info(error: BinanceAPIError) -> bool:
+        """フィルター不整合時にシンボル情報を再取得すべきか判定する"""
+        if error.status_code != 400:
+            return False
+        message = str(error).lower()
+        return any(
+            token in message
+            for token in (
+                "filter failure",
+                "lot_size",
+                "min_notional",
+                "price_filter",
+                "invalid quantity",
+                "invalid price",
+            )
+        )

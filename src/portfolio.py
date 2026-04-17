@@ -51,10 +51,10 @@ class PortfolioStats:
     total_fees: float = 0.0
     start_time: datetime | None = None
     # ── リスク指標 ─────────────────────────────────────────────────
-    peak_balance: float = 0.0   # 過去最高残高（実現利益込み）
-    max_drawdown: float = 0.0    # 最大ドローダウン（USD）
+    peak_balance: float = 0.0  # 過去最高残高（実現利益込み）
+    max_drawdown: float = 0.0  # 最大ドローダウン（USD）
     max_drawdown_pct: float = 0.0  # 最大ドローダウン率（%）
-    sharpe_ratio: float = 0.0   # シャープレシオ（年間・推定）
+    sharpe_ratio: float = 0.0  # シャープレシオ（年間・推定）
     # ── 月次/年次サマリー ───────────────────────────────────────────
     monthly_profit: dict[str, float] = field(default_factory=dict)  # {"YYYY-MM": profit}
     yearly_profit: dict[str, float] = field(default_factory=dict)  # {"YYYY": profit}
@@ -92,14 +92,19 @@ class Portfolio:
     # ── 残高 ─────────────────────────────────────────────────────────
 
     def _update_balance(self):
-        """残高を更新"""
+        """残高を更新。失敗時は前回の値を維持する"""
         try:
             balances = self.client.get_account_balance()
             if self.quote_asset in balances:
                 info = balances[self.quote_asset]
-                self.stats.current_balance = info["free"] + info["locked"]
+                new_balance = info["free"] + info["locked"]
+                # 異常に低い値が返ってきた場合は更新しない（APIの一時的な不具合対策）
+                if new_balance >= 0:
+                    self.stats.current_balance = new_balance
+                else:
+                    logger.warning(f"異常な残高値を受信: {new_balance}。更新をスキップします。")
         except Exception as e:
-            logger.error(f"残高取得失敗: {e}")
+            logger.error(f"残高取得失敗: {e}。前回の残高を維持します。")
 
     # ── トレード記録 ─────────────────────────────────────────────────
 
@@ -340,46 +345,10 @@ class Portfolio:
         return self.trades[-limit:]
 
     def generate_report(self) -> str:
+        from src.report import generate_portfolio_report
+
         self._update_balance()
-        elapsed = datetime.now() - self.stats.start_time if self.stats.start_time else None
-        hours = elapsed.total_seconds() / 3600 if elapsed else 0
-
-        # 月次/年次サマリー文字列
-        monthly_lines = ""
-        if self.stats.monthly_profit:
-            items = sorted(self.stats.monthly_profit.items(), reverse=True)[:6]
-            monthly_lines = "\n".join(f"  {m}: {p:+.2f}" for m, p in items)
-
-        yearly_lines = ""
-        if self.stats.yearly_profit:
-            items = sorted(self.stats.yearly_profit.items(), reverse=True)[:3]
-            yearly_lines = "\n".join(f"  {y}: {p:+.2f}" for y, p in items)
-
-        return (
-            f"\n"
-            f"===== ポートフォリオレポート =====\n"
-            f"実行時間: {hours:.2f} 時間\n"
-            f"初期残高: {self.stats.initial_balance:.2f} {self.quote_asset}\n"
-            f"現在残高: {self.stats.current_balance:.2f} {self.quote_asset}\n"
-            f"--------------------------------\n"
-            f"実現利益: {self.stats.realized_profit:+.2f} {self.quote_asset}\n"
-            f"未実現利益: {self.stats.unrealized_profit:+.2f} {self.quote_asset}\n"
-            f"総利益: {self.stats.total_profit:+.2f} {self.quote_asset}\n"
-            f"--------------------------------\n"
-            f"取引回数: {self.stats.total_trades}\n"
-            f"勝率: {self.stats.win_rate:.1f}%\n"
-            f"平均利益/取引: {self.stats.avg_profit_per_trade:+.2f} {self.quote_asset}\n"
-            f"--------------------------------\n"
-            f"===== リスク指標 =====\n"
-            f"ピーク残高: {self.stats.peak_balance:.2f} {self.quote_asset}\n"
-            f"最大ドローダウン: {self.stats.max_drawdown:.2f} {self.quote_asset}\n"
-            f"  ({self.stats.max_drawdown_pct:.2f}%)\n"
-            f"シャープレシオ: {self.stats.sharpe_ratio:.2f}\n"
-            f"--------------------------------\n"
-            f"===== 月次利益 =====\n{monthly_lines or '  (取引なし)'}\n"
-            f"===== 年次利益 =====\n{yearly_lines or '  (取引なし)'}\n"
-            f"================================"
-        )
+        return generate_portfolio_report(self)
 
     # ── 内部ヘルパー ────────────────────────────────────────────────
 

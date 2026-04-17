@@ -5,6 +5,7 @@ import threading
 import time
 from unittest.mock import MagicMock
 
+from src.binance_client import BinanceAPIError
 from src.ws_client import BinanceWebSocketClient
 from tests.conftest import BASE_PRICE
 
@@ -72,3 +73,46 @@ class TestBinanceWebSocketClient:
             t.join()
 
         assert errors == []
+
+    def test_start_user_stream_disables_on_listen_key_410(self, monkeypatch):
+        ws = BinanceWebSocketClient(binance_client=MagicMock())
+        ws._binance_client.create_listen_key.side_effect = BinanceAPIError(
+            "listenKey endpoint unavailable (410)",
+            status_code=410,
+            endpoint="/api/v3/userDataStream",
+        )
+        mock_logger = MagicMock()
+        monkeypatch.setattr("src.ws_client.logger", mock_logger)
+
+        started = []
+
+        def fake_thread(*args, **kwargs):
+            started.append(True)
+            return MagicMock()
+
+        monkeypatch.setattr("src.ws_client.threading.Thread", fake_thread)
+
+        ws.start_user_stream()
+
+        assert ws._user_stream_enabled is False
+        assert started == []
+        warning_messages = [call.args[0] for call in mock_logger.warning.call_args_list]
+        assert any("status=410" in message for message in warning_messages)
+        assert any("endpoint=/api/v3/userDataStream" in message for message in warning_messages)
+
+    def test_start_user_stream_skips_when_disabled_by_setting(self, monkeypatch):
+        monkeypatch.setattr("src.ws_client.Settings.USE_USER_STREAM", False)
+        ws = BinanceWebSocketClient(binance_client=MagicMock())
+
+        started = []
+
+        def fake_thread(*args, **kwargs):
+            started.append(True)
+            return MagicMock()
+
+        monkeypatch.setattr("src.ws_client.threading.Thread", fake_thread)
+
+        ws.start_user_stream()
+
+        assert ws._user_stream_enabled is False
+        assert started == []

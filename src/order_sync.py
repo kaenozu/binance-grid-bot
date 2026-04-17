@@ -13,6 +13,8 @@ logger = setup_logger("order_sync")
 def sync_with_exchange(order_manager, strategy, risk_manager=None) -> tuple[int, int]:
     """取引所のオープン注文と内部状態を同期
 
+    グリッドにマッチしない孤児注文は安全のためキャンセルする。
+
     Args:
         order_manager: OrderManager インスタンス
         strategy: GridStrategy インスタンス
@@ -67,15 +69,18 @@ def sync_with_exchange(order_manager, strategy, risk_manager=None) -> tuple[int,
                             risk_manager.record_position_close()
                 registered += 1
             else:
-                logger.warning(
-                    f"missed order sync: {side} {price} (orderId={oid}) - no matching grid"
-                )
+                logger.warning(f"孤児注文を検出: {side} {price} (orderId={oid}) - キャンセルします")
                 unmatched += 1
+                try:
+                    order_manager.client.cancel_order(strategy.symbol, oid)
+                    logger.info(f"孤児注文をキャンセル: orderId={oid}")
+                except Exception as e:
+                    logger.error(f"孤児注文キャンセル失敗 orderId={oid}: {e}")
 
     if registered:
         logger.info(f"取引所からの注文を登録: {registered} 件")
     if unmatched:
-        logger.warning(f"missed order sync total: {unmatched} orders not matched to grids")
+        logger.warning(f"孤児注文キャンセル合計: {unmatched} 件")
 
     return registered, removed
 

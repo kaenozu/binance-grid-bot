@@ -6,6 +6,7 @@
 """
 
 import os
+import re
 
 from dotenv import load_dotenv
 
@@ -52,6 +53,7 @@ class Settings:
 
     # リスク管理
     STOP_LOSS_PERCENTAGE: float = _safe_float(os.getenv("STOP_LOSS_PERCENTAGE"), 5.0)
+    MAX_DRAWDOWN_PCT: float = _safe_float(os.getenv("MAX_DRAWDOWN_PCT"), 10.0)
     MAX_POSITIONS: int = _safe_int(os.getenv("MAX_POSITIONS"), 5)
 
     # ボット動作設定
@@ -62,6 +64,7 @@ class Settings:
     TRADING_FEE_RATE: float = _safe_float(os.getenv("TRADING_FEE_RATE"), 0.001)
     CLOSE_ON_STOP: bool = os.getenv("CLOSE_ON_STOP", "true").lower() == "true"
     PERSIST_INTERVAL: int = _safe_int(os.getenv("PERSIST_INTERVAL"), 60)
+    USE_USER_STREAM: bool = os.getenv("USE_USER_STREAM", "true").lower() == "true"
 
     @classmethod
     def validate(cls) -> list[str]:
@@ -74,14 +77,37 @@ class Settings:
         if not cls.BINANCE_API_SECRET or cls.BINANCE_API_SECRET == "your_api_secret_here":
             errors.append("BINANCE_API_SECRET が設定されていません")
 
-        if cls.GRID_COUNT < 2:
-            errors.append("GRID_COUNT は 2 以上である必要があります")
+        if cls.BINANCE_API_KEY and not re.match(r"^[A-Za-z0-9+/]+$", cls.BINANCE_API_KEY):
+            errors.append("BINANCE_API_KEY の形式が不正です（英数字と記号 +/ のみ）")
 
-        if cls.INVESTMENT_AMOUNT <= 0:
-            errors.append("INVESTMENT_AMOUNT は 0 より大きい必要があります")
+        if cls.BINANCE_API_SECRET and not re.match(r"^[A-Za-z0-9+/]+$", cls.BINANCE_API_SECRET):
+            errors.append("BINANCE_API_SECRET の形式が不正です（英数字と記号 +/ のみ）")
+
+        if cls.GRID_COUNT < 0:
+            errors.append("GRID_COUNT は 0 以上である必要があります（0=自動、2以上で手動）")
+        if cls.GRID_COUNT == 1:
+            errors.append("GRID_COUNT は 2 以上である必要があります（0=自動）")
+
+        if cls.INVESTMENT_AMOUNT < 0:
+            errors.append("INVESTMENT_AMOUNT は 0 以上である必要があります")
+
+        # JPY pairs: threshold is higher (1 USD ~ 150 JPY)
+        symbol = cls.TRADING_SYMBOL.upper()
+        is_jpy = symbol.endswith("JPY")
+        amount_threshold = 750000 if is_jpy else 5000  # 750k JPY ~ 5000 USDT
+
+        if cls.INVESTMENT_AMOUNT > 0 and not cls.USE_TESTNET and cls.INVESTMENT_AMOUNT > amount_threshold:
+            unit = "JPY" if is_jpy else "USDT"
+            errors.append(
+                f"本番環境での INVESTMENT_AMOUNT が {int(amount_threshold)} {unit} を超えています。"
+                "少額から開始することを強く推奨します。"
+            )
 
         if cls.STOP_LOSS_PERCENTAGE <= 0 or cls.STOP_LOSS_PERCENTAGE > 100:
             errors.append("STOP_LOSS_PERCENTAGE は 0-100 の範囲である必要があります")
+
+        if cls.MAX_DRAWDOWN_PCT <= 0 or cls.MAX_DRAWDOWN_PCT > 100:
+            errors.append("MAX_DRAWDOWN_PCT は 0-100 の範囲である必要があります")
 
         if cls.MAX_POSITIONS < 1:
             errors.append("MAX_POSITIONS は 1 以上である必要があります")

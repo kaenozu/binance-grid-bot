@@ -32,6 +32,33 @@ def clean_db(tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def fast_sleep(monkeypatch):
+    """全テストで time.sleep を即座に返す（テスト高速化）"""
+    import time as _time
+    _real_sleep = _time.sleep
+    _sleep_calls = []
+
+    class _FakeTime:
+        """time モジュールの偽装。sleep は記録だけして即座に返す"""
+        sleep = staticmethod(lambda s: _sleep_calls.append(s))
+        time = staticmethod(_time.time)
+        monotonic = staticmethod(_time.monotonic)
+
+    # 各モジュールの time.sleep を即座に返すよう差し替え
+    modules = [
+        "time", "src.bot", "src.binance_client", "src.ws_client",
+        "src.multi_bot", "src.order_sync",
+    ]
+    for mod in modules:
+        try:
+            monkeypatch.setattr(f"{mod}.sleep", lambda s, _c=_sleep_calls: _c.append(s), raising=False)
+        except AttributeError:
+            pass
+
+    yield _sleep_calls
+
+
+@pytest.fixture(autouse=True)
 def restore_settings_after_test():
     """各テスト後にSettingsの値を復元（自動検出）"""
     original = {name: getattr(Settings, name) for name in _SETTING_NAMES}
@@ -66,6 +93,7 @@ def mock_settings():
         mock.UPPER_PRICE = None
         mock.INVESTMENT_AMOUNT = 1000.0
         mock.STOP_LOSS_PERCENTAGE = 5.0
+        mock.MAX_DRAWDOWN_PCT = 10.0
         mock.MAX_POSITIONS = 5
         mock.CHECK_INTERVAL = 10
         mock.MAX_CONSECUTIVE_ERRORS = 5

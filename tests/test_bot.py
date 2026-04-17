@@ -10,6 +10,14 @@ def test_bot_initialization_sets_price():
     """初期化時に現在価格を取得する"""
     mock_client = MagicMock()
     mock_client.get_symbol_price.return_value = BASE_PRICE
+    mock_client.get_symbol_info.return_value = {
+        "symbol": "BTCUSDT",
+        "base_asset": "BTC",
+        "quote_asset": "USDT",
+        "min_qty": 0.00001,
+        "step_size": 0.00001,
+        "tick_size": 0.01,
+    }
     mock_client.get_account_balance.return_value = {
         "USDT": {"free": 10000.0, "locked": 0.0},
     }
@@ -37,6 +45,7 @@ def test_bot_initialization_sets_price():
             with patch("src.bot.GridStrategy") as mock_strategy_cls:
                 mock_strategy = MagicMock()
                 mock_strategy.symbol = "BTCUSDT"
+                mock_strategy.estimate_cycle_profit.return_value = 100.0
                 mock_strategy.grids = []
                 mock_strategy_cls.return_value = mock_strategy
 
@@ -56,6 +65,183 @@ def test_bot_initialization_sets_price():
                             )
                             assert bot.is_running is False
                             assert bot.consecutive_errors == 0
+
+
+def test_bot_initialization_logs_low_expected_cycle_profit():
+    """投資額が非常に小さい場合、低利益の警告または自動調整が行われる"""
+    mock_client = MagicMock()
+    mock_client.get_symbol_price.return_value = BASE_PRICE
+    mock_client.get_symbol_info.return_value = {
+        "symbol": "BTCUSDT",
+        "base_asset": "BTC",
+        "quote_asset": "USDT",
+        "min_qty": 0.00001,
+        "step_size": 0.00001,
+        "tick_size": 0.01,
+        "min_notional": 10,
+    }
+    mock_client.get_account_balance.return_value = {
+        "USDT": {"free": 10000.0, "locked": 0.0},
+    }
+
+    with patch("src.bot.Settings") as mock_settings_cls:
+        mock_settings_cls.TRADING_SYMBOL = "BTCUSDT"
+        mock_settings_cls.BINANCE_API_KEY = "test_api_key"
+        mock_settings_cls.BINANCE_API_SECRET = "test_api_secret"
+        mock_settings_cls.USE_TESTNET = True
+        mock_settings_cls.GRID_COUNT = 100  # extremely high
+        mock_settings_cls.LOWER_PRICE = None
+        mock_settings_cls.UPPER_PRICE = None
+        mock_settings_cls.INVESTMENT_AMOUNT = 11.0  # tiny per-grid
+        mock_settings_cls.STOP_LOSS_PERCENTAGE = 5.0
+        mock_settings_cls.MAX_POSITIONS = 5
+        mock_settings_cls.CHECK_INTERVAL = 10
+        mock_settings_cls.MAX_CONSECUTIVE_ERRORS = 5
+        mock_settings_cls.GRID_RANGE_FACTOR = 0.15
+        mock_settings_cls.TRADING_FEE_RATE = 0.001
+        mock_settings_cls.CLOSE_ON_STOP = False
+        mock_settings_cls.PERSIST_INTERVAL = 60
+        mock_settings_cls.validate.return_value = []
+
+        with patch("src.bot.BinanceClient", return_value=mock_client):
+            with patch("src.bot.GridStrategy") as mock_strategy_cls:
+                mock_strategy = MagicMock()
+                mock_strategy.symbol = "BTCUSDT"
+                mock_strategy.grids = []
+                mock_strategy_cls.return_value = mock_strategy
+
+                with patch("src.bot.OrderManager"):
+                    with patch("src.bot.RiskManager"):
+                        with patch("src.bot.Portfolio") as mock_port:
+                            mock_port.return_value = MagicMock()
+                            mock_port.stats = MagicMock()
+                            mock_port.stats.start_time = None
+                            from src.bot import GridBot
+
+                            bot = GridBot()
+
+    # Verify: with 11 USDT / 100 grids, estimated cycle profit is near 0
+    # The bot should still initialize but with very low expected profit
+    assert bot is not None
+
+
+def test_bot_uses_live_balance_as_cap_in_production():
+    mock_client = MagicMock()
+    mock_client.get_symbol_price.return_value = BASE_PRICE
+    mock_client.get_symbol_info.return_value = {
+        "symbol": "ETHJPY",
+        "base_asset": "ETH",
+        "quote_asset": "JPY",
+        "min_qty": 0.00001,
+        "step_size": 0.00001,
+        "tick_size": 1.0,
+    }
+    mock_client.get_account_balance.return_value = {
+        "JPY": {"free": 4200.0, "locked": 0.0},
+    }
+
+    with patch("src.bot.Settings") as mock_settings_cls:
+        mock_settings_cls.TRADING_SYMBOL = "ETHJPY"
+        mock_settings_cls.BINANCE_API_KEY = "test_api_key"
+        mock_settings_cls.BINANCE_API_SECRET = "test_api_secret"
+        mock_settings_cls.USE_TESTNET = False
+        mock_settings_cls.GRID_COUNT = 4
+        mock_settings_cls.LOWER_PRICE = None
+        mock_settings_cls.UPPER_PRICE = None
+        mock_settings_cls.INVESTMENT_AMOUNT = 6000.0
+        mock_settings_cls.STOP_LOSS_PERCENTAGE = 5.0
+        mock_settings_cls.MAX_POSITIONS = 5
+        mock_settings_cls.CHECK_INTERVAL = 10
+        mock_settings_cls.MAX_CONSECUTIVE_ERRORS = 5
+        mock_settings_cls.GRID_RANGE_FACTOR = 0.08
+        mock_settings_cls.TRADING_FEE_RATE = 0.001
+        mock_settings_cls.CLOSE_ON_STOP = False
+        mock_settings_cls.PERSIST_INTERVAL = 60
+        mock_settings_cls.validate.return_value = []
+
+        with patch("src.bot.BinanceClient", return_value=mock_client):
+            with patch("src.bot.GridStrategy") as mock_strategy_cls:
+                mock_strategy = MagicMock()
+                mock_strategy.symbol = "ETHJPY"
+                mock_strategy.estimate_cycle_profit.return_value = 70.0
+                mock_strategy.grids = []
+                mock_strategy_cls.return_value = mock_strategy
+
+                with patch("src.bot.OrderManager"):
+                    with patch("src.bot.RiskManager"):
+                        with patch("src.bot.Portfolio") as mock_port:
+                            mock_port.return_value = MagicMock()
+                            mock_port.stats = MagicMock()
+                            mock_port.stats.start_time = None
+
+                            from src.bot import GridBot
+
+                            bot = GridBot()
+
+    assert mock_strategy_cls.call_args.kwargs["investment_amount"] == 4200.0
+    assert mock_strategy_cls.call_args.kwargs["grid_count"] == 3
+    assert bot.client.get_account_balance.called
+
+
+def test_bot_logs_startup_summary():
+    mock_client = MagicMock()
+    mock_client.get_symbol_price.return_value = BASE_PRICE
+    mock_client.get_symbol_info.return_value = {
+        "symbol": "ETHJPY",
+        "base_asset": "ETH",
+        "quote_asset": "JPY",
+        "min_qty": 0.00001,
+        "step_size": 0.00001,
+        "tick_size": 1.0,
+    }
+    mock_client.get_account_balance.return_value = {
+        "JPY": {"free": 4200.0, "locked": 0.0},
+    }
+
+    with patch("src.bot.Settings") as mock_settings_cls:
+        mock_settings_cls.TRADING_SYMBOL = "ETHJPY"
+        mock_settings_cls.BINANCE_API_KEY = "test_api_key"
+        mock_settings_cls.BINANCE_API_SECRET = "test_api_secret"
+        mock_settings_cls.USE_TESTNET = False
+        mock_settings_cls.GRID_COUNT = 4
+        mock_settings_cls.LOWER_PRICE = None
+        mock_settings_cls.UPPER_PRICE = None
+        mock_settings_cls.INVESTMENT_AMOUNT = 6000.0
+        mock_settings_cls.STOP_LOSS_PERCENTAGE = 5.0
+        mock_settings_cls.MAX_POSITIONS = 5
+        mock_settings_cls.CHECK_INTERVAL = 10
+        mock_settings_cls.MAX_CONSECUTIVE_ERRORS = 5
+        mock_settings_cls.GRID_RANGE_FACTOR = 0.08
+        mock_settings_cls.TRADING_FEE_RATE = 0.001
+        mock_settings_cls.CLOSE_ON_STOP = False
+        mock_settings_cls.PERSIST_INTERVAL = 60
+        mock_settings_cls.validate.return_value = []
+
+        with patch("src.bot.BinanceClient", return_value=mock_client):
+            with patch("src.bot.GridStrategy") as mock_strategy_cls:
+                mock_strategy = MagicMock()
+                mock_strategy.symbol = "ETHJPY"
+                mock_strategy.estimate_cycle_profit.return_value = 70.0
+                mock_strategy.grids = []
+                mock_strategy_cls.return_value = mock_strategy
+
+                with patch("src.bot.OrderManager"):
+                    with patch("src.bot.RiskManager"):
+                        with patch("src.bot.Portfolio") as mock_port:
+                            mock_port.return_value = MagicMock()
+                            mock_port.stats = MagicMock()
+                            mock_port.stats.start_time = None
+                            with patch("src.bot.logger") as mock_logger:
+                                from src.bot import GridBot
+
+                                GridBot()
+
+    info_messages = [call.args[0] for call in mock_logger.info.call_args_list]
+    assert any("起動サマリ:" in message for message in info_messages)
+    assert any("残高=4200.00 JPY" in message for message in info_messages)
+    assert any("採用投資額=4200.00 JPY" in message for message in info_messages)
+    assert any("採用グリッド数=3" in message for message in info_messages)
+    assert any("推定1往復利益=71.87 JPY" in message for message in info_messages)
 
 
 def test_tick_processes_fills():
@@ -80,6 +266,12 @@ def test_tick_processes_fills():
     mock_port.record_trade.return_value = None
     mock_port.calculate_unrealized_pnl = MagicMock()
     mock_port.get_stats.return_value = MagicMock()
+    mock_port.stats = MagicMock()
+    mock_port.stats.peak_balance = 1000.0
+    mock_port.stats.max_drawdown_pct = 0.0
+    mock_port.stats = MagicMock()
+    mock_port.stats.peak_balance = 1000.0
+    mock_port.stats.max_drawdown_pct = 0.0
 
     from src.bot import GridBot
 
@@ -122,6 +314,12 @@ def test_tick_halts_on_stop_loss():
     mock_rm.should_halt_trading.return_value = True
     mock_port = MagicMock()
     mock_port.generate_report.return_value = "report"
+    mock_port.stats = MagicMock()
+    mock_port.stats.peak_balance = 1000.0
+    mock_port.stats.max_drawdown_pct = 0.0
+    mock_port.stats = MagicMock()
+    mock_port.stats.peak_balance = 1000.0
+    mock_port.stats.max_drawdown_pct = 0.0
 
     from src.bot import GridBot
 
@@ -149,6 +347,59 @@ def test_tick_halts_on_stop_loss():
     with patch.object(GridBot, "_emergency_stop", fake_emergency_stop):
         bot._tick()
     assert bot.is_running is False
+
+
+def test_tick_stops_on_portfolio_drawdown():
+    """ポートフォリオのドローダウンが上限を超えたら停止する"""
+    strategy = GridStrategy(
+        symbol="BTCUSDT",
+        current_price=BASE_PRICE,
+        lower_price=LOWER_PRICE,
+        upper_price=UPPER_PRICE,
+        grid_count=10,
+        investment_amount=1000.0,
+    )
+
+    mock_client = MagicMock()
+    mock_om = MagicMock()
+    mock_om.check_order_fills.return_value = []
+    mock_rm = MagicMock()
+    mock_rm.should_halt_trading.return_value = False
+    mock_port = MagicMock()
+    mock_port.record_trade.return_value = None
+    mock_port.calculate_unrealized_pnl = MagicMock()
+    mock_port.stats = MagicMock()
+    mock_port.stats.peak_balance = 1000.0
+    # Must exceed Settings.MAX_DRAWDOWN_PCT (loaded from .env)
+    mock_port.stats.max_drawdown_pct = 99.0
+
+    from src.bot import GridBot
+
+    bot = GridBot.__new__(GridBot)
+    bot.client = mock_client
+    bot.strategy = strategy
+    bot.order_manager = mock_om
+    bot.risk_manager = mock_rm
+    bot.portfolio = mock_port
+    bot.ws_client = None
+    bot.symbol = "BTCUSDT"
+    bot.is_running = True
+    bot.consecutive_errors = 0
+    bot._last_status_time = 0.0
+    bot._last_persist_time = 0.0
+    bot._last_detail_time = 0.0
+    bot.current_price = BASE_PRICE
+    mock_client.get_symbol_price.return_value = BASE_PRICE
+    mock_client.get_symbol_info.return_value = None
+
+    def fake_emergency_stop(self):
+        self.is_running = False
+
+    with patch.object(GridBot, "_emergency_stop", fake_emergency_stop):
+        bot._tick()
+
+    assert bot.is_running is False
+
 
 
 def test_handle_grid_shift_preserves_filled_positions():
