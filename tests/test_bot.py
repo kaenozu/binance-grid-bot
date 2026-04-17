@@ -401,44 +401,6 @@ def test_tick_stops_on_portfolio_drawdown():
     assert bot.is_running is False
 
 
-def test_tick_stops_on_portfolio_drawdown_alt():
-    mock_om = MagicMock()
-    mock_om.check_order_fills.return_value = []
-    mock_rm = MagicMock()
-    mock_rm.should_halt_trading.return_value = False
-    mock_port = MagicMock()
-    mock_port.record_trade.return_value = None
-    mock_port.calculate_unrealized_pnl = MagicMock()
-    mock_port.stats = MagicMock()
-    mock_port.stats.peak_balance = 1000.0
-    mock_port.stats.max_drawdown_pct = 99.0
-
-    from src.bot import GridBot
-
-    bot = GridBot.__new__(GridBot)
-    bot.client = mock_client
-    bot.strategy = strategy
-    bot.order_manager = mock_om
-    bot.risk_manager = mock_rm
-    bot.portfolio = mock_port
-    bot.ws_client = None
-    bot.symbol = "BTCUSDT"
-    bot.is_running = True
-    bot.consecutive_errors = 0
-    bot._last_status_time = 0.0
-    bot._last_persist_time = 0.0
-    bot._last_detail_time = 0.0
-    bot.current_price = BASE_PRICE
-    mock_client.get_symbol_info.return_value = None
-
-    def fake_emergency_stop(self):
-        self.is_running = False
-
-    with patch.object(GridBot, "_emergency_stop", fake_emergency_stop):
-        bot._tick()
-
-    assert bot.is_running is False
-
 
 def test_handle_grid_shift_preserves_filled_positions():
     """グリッドシフト時に約定済みポジションを保持する"""

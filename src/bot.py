@@ -383,24 +383,18 @@ class GridBot:
                 self.stop()
 
     def _update_price(self):
-        """現在価格を更新（停滞検知 + 無限リトライ）"""
+        """現在価格を更新（停滞検知付き）"""
         ws = self.ws_client
         if ws and ws.current_price is not None:
             if ws.is_price_stale:
                 logger.warning(
                     f"価格更新停滞: {ws.seconds_since_last_price:.0f}秒。REST API で取得します"
                 )
-                self.current_price = self._retry_api(
-                    lambda: self.client.get_symbol_price(self.symbol),
-                    "価格取得",
-                )
+                self.current_price = self.client.get_symbol_price(self.symbol)
             else:
                 self.current_price = ws.current_price
         else:
-            self.current_price = self._retry_api(
-                lambda: self.client.get_symbol_price(self.symbol),
-                "価格取得",
-            )
+            self.current_price = self.client.get_symbol_price(self.symbol)
         self.strategy.update_current_price(self.current_price)
 
     def _tick(self) -> None:

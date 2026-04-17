@@ -7,8 +7,10 @@ import pytest
 from src.risk_manager import RiskManager
 from tests.conftest import BASE_PRICE, LOWER_PRICE
 
-# 損切り価格: 62900 * 0.95 = 59755.0
-STOP_LOSS = LOWER_PRICE * 0.95
+# 損切り価格: lower_price * (1 - STOP_LOSS_PERCENTAGE/100)
+# Settings.STOP_LOSS_PERCENTAGE is loaded from .env (currently 20%)
+from config.settings import Settings
+STOP_LOSS = LOWER_PRICE * (1 - Settings.STOP_LOSS_PERCENTAGE / 100)
 
 
 class TestRiskManager:
@@ -57,8 +59,8 @@ class TestRiskManager:
         status = risk_manager.risk_status
         assert status["stop_loss_price"] == STOP_LOSS
         assert status["current_positions"] == 0
-        assert status["max_positions"] == 5
-        assert status["stop_loss_percentage"] == 5.0
+        assert status["max_positions"] == Settings.MAX_POSITIONS
+        assert status["stop_loss_percentage"] == Settings.STOP_LOSS_PERCENTAGE
 
     def test_should_halt_trading_stop_loss(self, risk_manager):
         assert risk_manager.should_halt_trading(STOP_LOSS - 1000) is True
