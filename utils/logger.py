@@ -9,7 +9,7 @@ import datetime
 import logging
 import os
 import sys
-from logging.handlers import RotatingFileHandler
+from logging.handlers import RotatingFileHandler, BaseRotatingHandler
 from pathlib import Path
 
 
@@ -39,6 +39,24 @@ class HumanFormatter(logging.Formatter):
         return f"{ts} {color}[{level:>8}]{reset} {module}: {msg}"
 
 
+class WindowsSafeRotatingFileHandler(RotatingFileHandler):
+    """Windows でファイルロック時にローテーション失敗しないハンドラ"""
+
+    def rotate(self, source, dest):
+        try:
+            super().rotate(source, dest)
+        except PermissionError:
+            # 別プロセスが掴んでいる場合はローテーションをスキップ（追記し続ける）
+            pass
+
+    def doRollover(self):
+        try:
+            super().doRollover()
+        except PermissionError:
+            # ローテーション失敗時は現在のファイルに追記し続ける
+            pass
+
+
 class FileFormatter(logging.Formatter):
     """ファイル用フォーマッタ（色なし・ミリ秒付き）"""
 
@@ -66,7 +84,7 @@ def setup_logger(name: str = "grid_bot") -> logging.Logger:
         log_dir = Path(__file__).parent.parent / "logs"
         log_dir.mkdir(exist_ok=True)
         log_file = log_dir / "grid_bot.log"
-        file_handler = RotatingFileHandler(
+        file_handler = WindowsSafeRotatingFileHandler(
             log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
         )
         file_handler.setFormatter(FileFormatter())
