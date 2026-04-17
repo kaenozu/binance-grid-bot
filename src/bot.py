@@ -159,7 +159,9 @@ class GridBot:
         """
         configured = Settings.INVESTMENT_AMOUNT
         try:
-            balances = self.client.get_account_balance()
+            balances = self._retry_api(
+                lambda: self.client.get_account_balance(), "残高取得",
+            )
             quote_balance = balances.get(self.quote_asset, {}).get("free", 0.0)
             self._live_quote_balance = quote_balance
             if quote_balance <= 0:
@@ -381,35 +383,47 @@ class GridBot:
                 self.stop()
 
     def _update_price(self):
-        """現在価格を更新（停滞検知付き）"""
+        """現在価格を更新（停滞検知 + 無限リトライ）"""
         ws = self.ws_client
         if ws and ws.current_price is not None:
             if ws.is_price_stale:
                 logger.warning(
                     f"価格更新停滞: {ws.seconds_since_last_price:.0f}秒。REST API で取得します"
                 )
-                self.current_price = self.client.get_symbol_price(self.symbol)
+                self.current_price = self._retry_api(
+                    lambda: self.client.get_symbol_price(self.symbol),
+                    "価格取得",
+                )
             else:
                 self.current_price = ws.current_price
         else:
-            self.current_price = self.client.get_symbol_price(self.symbol)
+            self.current_price = self._retry_api(
+                lambda: self.client.get_symbol_price(self.symbol),
+                "価格取得",
+            )
         self.strategy.update_current_price(self.current_price)
 
     def _tick(self) -> None:
         """1 ティック処理"""
         try:
             self._update_price()
-            if not self._validate_price(self.current_price):
-                return
-
-            if self._check_halt_conditions():
-                return
-
-            self._execute_trading_logic()
-            self._run_maintenance_tasks()
-
         except Exception as e:
             self._handle_tick_error(e)
+            return
+
+        if not self._validate_price(self.current_price):
+            return
+
+        if self._check_halt_conditions():
+            return
+
+        self._execute_trading_logic()
+
+        try:
+            self._run_maintenance_tasks()
+        except Exception as e:
+            # メンテナンスタスクの失敗（ログ表示やDB保存など）は取引に影響させない
+            logger.warning(f"メンテナンスタスク失敗（スキップ）: {e}")
 
     def _check_halt_conditions(self) -> bool:
         """取引停止条件のチェック"""
@@ -421,9 +435,17 @@ class GridBot:
         return False
 
     def _execute_trading_logic(self) -> None:
-        """取引実行ロジックの管理"""
-        self._process_fills()
-        self.portfolio.calculate_unrealized_pnl(self.current_price)
+        """取引実行ロジックの管理（通信エラー時は自動リトライ）"""
+        try:
+            self._process_fills()
+        except Exception as e:
+            logger.warning(f"約定チェック失敗（次ティックでリトライ）: {e}")
+
+        try:
+            self.portfolio.calculate_unrealized_pnl(self.current_price)
+        except Exception as e:
+            logger.warning(f"未実現損益計算失敗（スキップ）: {e}")
+
         self.consecutive_errors = 0
 
         if self._check_portfolio_drawdown():
@@ -468,19 +490,27 @@ class GridBot:
         except Exception:
             pass
 
-    def _handle_tick_error(self, e: Exception) -> None:
-        """ティック処理エラーのハンドリング"""
-        self.consecutive_errors += 1
-        logger.error(
-            f"ティック処理エラー ({self.consecutive_errors}/{Settings.MAX_CONSECUTIVE_ERRORS}): {e}"
-        )
-        logger.error(f"スタックトレース:\n{traceback.format_exc()}")
+    def _retry_api(self, fn, label: str, max_wait: float = 300):
+        """API呼び出しを無限リトライ（指数バックオフ、最大5分待機）"""
+        delay = 1.0
+        while True:
+            try:
+                return fn()
+            except Exception as e:
+                logger.warning(f"{label}失敗 ({delay:.0f}秒後にリトライ): {e}")
+                time.sleep(delay)
+                delay = min(delay * 2, max_wait)
 
-        if self.consecutive_errors >= Settings.MAX_CONSECUTIVE_ERRORS:
-            logger.critical(
-                f"連続エラーが{Settings.MAX_CONSECUTIVE_ERRORS}回に到達。ボットを停止します。"
-            )
-            self.stop()
+    def _handle_tick_error(self, e: Exception) -> None:
+        """ティック処理エラーのハンドリング（停止せず無限リトライ）"""
+        self.consecutive_errors += 1
+        logger.warning(
+            f"ティック処理エラー ({self.consecutive_errors}回目、継続します): {e}"
+        )
+        logger.debug(f"スタックトレース:\n{traceback.format_exc()}")
+
+        # 通信エラーは停止せずリトライし続ける
+        # 致命的エラー（設定ミス等）は上位の try/except でキャッチされる
 
     def _check_portfolio_drawdown(self) -> bool:
         """ポートフォリオのドローダウンが上限を超えたら停止する"""
@@ -599,7 +629,9 @@ class GridBot:
     def _resolve_short_sell_qty(self, grid_level: int, symbol_info: dict) -> float:
         """ショート再SELL用の数量を決定（手持ちSOLから）"""
         try:
-            balances = self.client.get_account_balance()
+            balances = self._retry_api(
+                lambda: self.client.get_account_balance(), "残高取得(short)",
+            )
             base_asset = symbol_info.get("base_asset", "")
             available = float(balances.get(base_asset, {}).get("free", 0))
         except Exception:

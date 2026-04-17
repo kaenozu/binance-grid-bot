@@ -126,7 +126,7 @@ class BinanceWebSocketClient:
             logger.error(f"ティッカー処理エラー: {e}")
 
     def _on_price_error(self, ws, error):
-        logger.error(f"価格ストリーム WebSocket エラー: {error}")
+        logger.warning(f"価格ストリーム切断: {error}。自動再接続します")
         if ws:
             ws.close()
 
@@ -249,7 +249,7 @@ class BinanceWebSocketClient:
             logger.error(f"ユーザーストリームメッセージ処理エラー: {e}")
 
     def _on_user_error(self, ws, error):
-        logger.error(f"ユーザーストリーム WebSocket エラー: {error}")
+        logger.warning(f"ユーザーストリーム切断: {error}。自動再接続します")
         if ws:
             ws.close()
 

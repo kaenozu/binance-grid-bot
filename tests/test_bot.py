@@ -370,7 +370,8 @@ def test_tick_stops_on_portfolio_drawdown():
     mock_port.calculate_unrealized_pnl = MagicMock()
     mock_port.stats = MagicMock()
     mock_port.stats.peak_balance = 1000.0
-    mock_port.stats.max_drawdown_pct = 12.0
+    # Must exceed Settings.MAX_DRAWDOWN_PCT (loaded from .env)
+    mock_port.stats.max_drawdown_pct = 99.0
 
     from src.bot import GridBot
 
@@ -389,6 +390,7 @@ def test_tick_stops_on_portfolio_drawdown():
     bot._last_detail_time = 0.0
     bot.current_price = BASE_PRICE
     mock_client.get_symbol_price.return_value = BASE_PRICE
+    mock_client.get_symbol_info.return_value = None
 
     def fake_emergency_stop(self):
         self.is_running = False
@@ -399,19 +401,7 @@ def test_tick_stops_on_portfolio_drawdown():
     assert bot.is_running is False
 
 
-def test_tick_stops_on_portfolio_drawdown():
-    """ポートフォリオのドローダウンが上限を超えたら停止する"""
-    strategy = GridStrategy(
-        symbol="BTCUSDT",
-        current_price=BASE_PRICE,
-        lower_price=LOWER_PRICE,
-        upper_price=UPPER_PRICE,
-        grid_count=10,
-        investment_amount=1000.0,
-    )
-
-    mock_client = MagicMock()
-    mock_client.get_symbol_price.return_value = BASE_PRICE
+def test_tick_stops_on_portfolio_drawdown_alt():
     mock_om = MagicMock()
     mock_om.check_order_fills.return_value = []
     mock_rm = MagicMock()
@@ -421,7 +411,7 @@ def test_tick_stops_on_portfolio_drawdown():
     mock_port.calculate_unrealized_pnl = MagicMock()
     mock_port.stats = MagicMock()
     mock_port.stats.peak_balance = 1000.0
-    mock_port.stats.max_drawdown_pct = 12.0
+    mock_port.stats.max_drawdown_pct = 99.0
 
     from src.bot import GridBot
 
@@ -439,6 +429,7 @@ def test_tick_stops_on_portfolio_drawdown():
     bot._last_persist_time = 0.0
     bot._last_detail_time = 0.0
     bot.current_price = BASE_PRICE
+    mock_client.get_symbol_info.return_value = None
 
     def fake_emergency_stop(self):
         self.is_running = False
