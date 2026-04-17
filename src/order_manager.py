@@ -184,9 +184,7 @@ class OrderManager:
             return 0
 
         # 既存SELL注文でロック済みの数量を差し引く
-        sell_locked = sum(
-            o.quantity for o in self._active_orders.values() if o.side == "SELL"
-        )
+        sell_locked = sum(o.quantity for o in self._active_orders.values() if o.side == "SELL")
         surplus = available - sell_locked
         surplus = self._normalize_quantity(surplus, symbol_info)
         if surplus <= 0:
@@ -208,6 +206,8 @@ class OrderManager:
         for grid in short_grids:
             if remaining <= 0:
                 break
+            if grid.short_sell_price is None:
+                continue
             qty = min(qty_per_grid, remaining)
             qty = self._normalize_quantity(qty, symbol_info)
             if qty <= 0:

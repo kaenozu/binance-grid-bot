@@ -116,8 +116,8 @@ class GridBot:
         )
         if estimated_cycle_profit < self._min_cycle_profit():
             logger.warning(
-                f"現在設定の推定1往復利益が低いです: {estimated_cycle_profit:.2f} {self.quote_asset}. "
-                "GRID_COUNT を減らすか投資額を増やしてください。"
+                f"現在設定の推定1往返利益が低いです: {estimated_cycle_profit:.2f} "
+                f"{self.quote_asset}. GRID_COUNT を減らすか投資額を増やしてください。"
             )
 
         self.order_manager = OrderManager(self.client, self.strategy)
@@ -160,7 +160,8 @@ class GridBot:
         configured = Settings.INVESTMENT_AMOUNT
         try:
             balances = self._retry_api(
-                lambda: self.client.get_account_balance(), "残高取得",
+                lambda: self.client.get_account_balance(),
+                "残高取得",
             )
             quote_balance = balances.get(self.quote_asset, {}).get("free", 0.0)
             self._live_quote_balance = quote_balance
@@ -178,9 +179,7 @@ class GridBot:
                     logger.info(f"投資額: {resolved:.2f} {self.quote_asset}（設定値を採用）")
                 return resolved
 
-            logger.info(
-                f"投資額: {quote_balance:.2f} {self.quote_asset}（残高全額を自動使用）"
-            )
+            logger.info(f"投資額: {quote_balance:.2f} {self.quote_asset}（残高全額を自動使用）")
             return quote_balance
         except Exception as e:
             logger.error(f"残高取得失敗: {e}")
@@ -498,9 +497,7 @@ class GridBot:
     def _handle_tick_error(self, e: Exception) -> None:
         """ティック処理エラーのハンドリング（停止せず無限リトライ）"""
         self.consecutive_errors += 1
-        logger.warning(
-            f"ティック処理エラー ({self.consecutive_errors}回目、継続します): {e}"
-        )
+        logger.warning(f"ティック処理エラー ({self.consecutive_errors}回目、継続します): {e}")
         logger.debug(f"スタックトレース:\n{traceback.format_exc()}")
 
         # 通信エラーは停止せずリトライし続ける
@@ -569,32 +566,44 @@ class GridBot:
                 logger.info(f"グリッド {fill.grid}: 買い約定、売り注文配置")
                 grid.filled_quantity = fill.quantity
                 profit = self.portfolio.record_trade(
-                    side=fill.side, price=fill.price, quantity=fill.quantity,
-                    order_id=fill.order_id, grid_level=fill.grid,
+                    side=fill.side,
+                    price=fill.price,
+                    quantity=fill.quantity,
+                    order_id=fill.order_id,
+                    grid_level=fill.grid,
                 )
                 self._place_sell_for_grid(fill.grid, fill.quantity)
 
             # ── 下方向: SELL約定 → 再BUY配置 ──
             elif fill.side == "SELL" and grid.position_filled:
                 profit = self.portfolio.record_trade(
-                    side=fill.side, price=fill.price, quantity=fill.quantity,
-                    order_id=fill.order_id, grid_level=fill.grid,
+                    side=fill.side,
+                    price=fill.price,
+                    quantity=fill.quantity,
+                    order_id=fill.order_id,
+                    grid_level=fill.grid,
                 )
                 self.risk_manager.record_position_close(profit or 0.0)
                 logger.info(f"グリッド {fill.grid}: 決済完了、再注文配置")
                 self._place_grid_orders_for_level(fill.grid)
 
             # ── 上方向: SELL約定（ショート開始）→ BUYBACK配置 ──
-            elif fill.side == "SELL" and grid.short_sell_price and fill.price >= grid.short_sell_price:
+            elif (
+                fill.side == "SELL"
+                and grid.short_sell_price
+                and fill.price >= grid.short_sell_price
+            ):
                 grid.short_filled_quantity = fill.quantity
                 self.strategy.mark_short_filled(fill.grid, fill.order_id)
                 profit = self.portfolio.record_trade(
-                    side=fill.side, price=fill.price, quantity=fill.quantity,
-                    order_id=fill.order_id, grid_level=fill.grid,
+                    side=fill.side,
+                    price=fill.price,
+                    quantity=fill.quantity,
+                    order_id=fill.order_id,
+                    grid_level=fill.grid,
                 )
                 # BUYBACK注文を配置
                 if grid.short_buyback_price:
-                    buyback_qty = fill.quantity
                     try:
                         self.order_manager.place_buy_order_for_grid(fill.grid)
                         logger.info(
@@ -608,8 +617,11 @@ class GridBot:
             elif fill.side == "BUY" and grid.short_position_filled:
                 self.strategy.mark_short_closed(fill.grid, fill.order_id)
                 profit = self.portfolio.record_trade(
-                    side=fill.side, price=fill.price, quantity=fill.quantity,
-                    order_id=fill.order_id, grid_level=fill.grid,
+                    side=fill.side,
+                    price=fill.price,
+                    quantity=fill.quantity,
+                    order_id=fill.order_id,
+                    grid_level=fill.grid,
                 )
                 logger.info(f"グリッド {fill.grid}: ショートBUYBACK約定、再SELL配置")
                 # 再度SELL指値を配置
@@ -624,7 +636,8 @@ class GridBot:
         """ショート再SELL用の数量を決定（手持ちSOLから）"""
         try:
             balances = self._retry_api(
-                lambda: self.client.get_account_balance(), "残高取得(short)",
+                lambda: self.client.get_account_balance(),
+                "残高取得(short)",
             )
             base_asset = symbol_info.get("base_asset", "")
             available = float(balances.get(base_asset, {}).get("free", 0))
@@ -633,6 +646,7 @@ class GridBot:
         if available <= 0:
             return 0
         from utils.precision import quantize_down
+
         step_size = float(symbol_info.get("step_size", 0) or 0)
         if step_size > 0:
             return quantize_down(available, step_size)
