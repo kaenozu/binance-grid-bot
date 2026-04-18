@@ -309,11 +309,10 @@ class BinanceClient:
         normalized_price = price
         if price is not None and tick_size > 0:
             rounding = "down" if side == "BUY" else "up"
-            normalized_price = (
-                quantize_down(price, tick_size)
-                if rounding == "down"
-                else quantize_up(price, tick_size)
-            )
+            if rounding == "down":
+                normalized_price = quantize_down(price, tick_size)
+            else:
+                normalized_price = quantize_up(price, tick_size)
 
         if price is not None and min_notional > 0:
             normalized_price_val = normalized_price if normalized_price is not None else price

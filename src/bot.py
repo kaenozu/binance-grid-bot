@@ -5,13 +5,12 @@ import traceback
 from pathlib import Path
 
 from config.settings import Settings
-from src import exporter, order_sync, persistence
+from src import order_sync, persistence
 from src.api_weight import APIWeightTracker
 from src.binance_client import BinanceClient
 from src.grid_strategy import GridStrategy
 from src.order_manager import OrderManager, OrderPlacementResult
 from src.portfolio import Portfolio
-from src.position_closer import close_open_positions
 from src.risk_manager import RiskManager
 from src.status_display import display_status, get_summary
 from src.ws_client import BinanceWebSocketClient
@@ -97,8 +96,9 @@ class GridBot:
         )
         if estimated_cycle_profit < self._min_cycle_profit():
             logger.warning(
-                f"現在設定の推定1往返利益が低いです: {estimated_cycle_profit:.2f} "
-                f"{self.quote_asset}. GRID_COUNT を減らすか投資額を増やしてください。"
+                f"現在設定の推定1往復利益が低いです: "
+                f"{estimated_cycle_profit:.2f} {self.quote_asset}. "
+                "GRID_COUNT を減らすか投資額を増やしてください。"
             )
 
         self.order_manager = OrderManager(self.client, self.strategy)
@@ -283,6 +283,8 @@ class GridBot:
         portfolio_stats = persistence.load_portfolio_stats()
         if portfolio_stats:
             persistence.restore_stats_to(self.portfolio.stats, portfolio_stats)
+            # initial_balance は毎回現在のAPI残高で上書き（DBの古い値を無視）
+            self.portfolio.stats.initial_balance = self.portfolio.stats.current_balance
             logger.info(
                 f"ポートフォリオ統計を復元: "
                 f"初期残高={self.portfolio.stats.initial_balance:.2f}, "
@@ -682,58 +684,35 @@ class GridBot:
 
     # ── 停止処理 ───────────────────────────────────────────────────
 
-    def _shutdown_core(self, close_positions=False):
-        """停止時の共通処理"""
-        self._persist_state()
-        canceled = self.order_manager.cancel_all_orders()
-        logger.info(f"キャンセル完了: {canceled} 件")
-
-        if close_positions:
-            close_open_positions(self.client, self.strategy, self.portfolio)
-
-        report = self.portfolio.generate_report()
-        logger.info("\n" + report)
-        return report
-
     def _export_on_stop(self):
-        """停止時にトレード履歴をエクスポート
+        from src.bot_shutdown import export_on_stop
 
-        メモリ上のtradesが空の場合はDBから再読み込みする。
-        """
-        trades = self.portfolio.trades
-        if not trades:
-            records = persistence.load_trades()
-            if records:
-                self.portfolio.restore_trades(records)
-                trades = self.portfolio.trades
-        if not trades:
-            logger.info("エクスポート対象のトレードなし")
-            return
-        try:
-            export_dir = Path("data") / "exports"
-            timestamp_str = time.strftime("%Y%m%d_%H%M%S")
-            csv_path = export_dir / f"trades_{timestamp_str}.csv"
-            json_path = export_dir / f"trades_{timestamp_str}.json"
-            count = exporter.export_trades_csv(trades, csv_path)
-            exporter.export_trades_json(trades, json_path)
-            logger.info(f"トレード履歴をエクスポート: {count} 件 -> {export_dir}")
-        except Exception as e:
-            logger.error(f"エクスポート失敗: {e}")
+        export_on_stop(self.portfolio)
 
     def _emergency_stop(self):
-        """緊急停止（オープンポジションを成行決済）"""
+        from src.bot_shutdown import emergency_stop
+
         self.is_running = False
-        logger.warning("緊急停止処理開始...")
-        report = self._shutdown_core(close_positions=True)
-        print(report)
-        logger.info("緊急停止完了")
+        emergency_stop(
+            self.client, self.strategy, self.order_manager, self.portfolio, self._persist_state
+        )
+
+    def _close_open_positions(self):
+        from src.bot_shutdown import close_open_positions
+
+        close_open_positions(self.client, self.strategy, self.portfolio)
 
     def stop(self):
-        """ボット停止"""
+        from config.settings import Settings
+        from src.bot_shutdown import stop_bot
+
         self.is_running = False
-        logger.info("ボット停止中...")
-        if self.ws_client:
-            self.ws_client.stop()
-        self._shutdown_core(close_positions=Settings.CLOSE_ON_STOP)
-        self._export_on_stop()
-        logger.info("ボット停止完了")
+        stop_bot(
+            self.client,
+            self.strategy,
+            self.order_manager,
+            self.portfolio,
+            self._persist_state,
+            Settings.CLOSE_ON_STOP,
+            self.ws_client,
+        )

@@ -1,10 +1,8 @@
 """プリセット設定のテスト"""
 
-import pytest
-
 from config.presets import (
-    PRESETS,
     MULTI_PRESETS,
+    PRESETS,
     GridPreset,
     get_preset,
     list_presets,
@@ -22,7 +20,9 @@ class TestPresetDefinitions:
             assert isinstance(preset, GridPreset)
             assert preset.name, f"{key}: name が空"
             assert preset.symbol, f"{key}: symbol が空"
-            assert preset.symbol.endswith("USDT") or preset.symbol.endswith("JPY"), f"{key}: symbol はUSDT/JPYペアであるべき"
+            assert preset.symbol.endswith("USDT") or preset.symbol.endswith("JPY"), (
+                f"{key}: symbol はUSDT/JPYペアであるべき"
+            )
             assert preset.grid_count >= 2, f"{key}: grid_count >= 2"
             assert 0 < preset.grid_range_factor <= 1, f"{key}: grid_range_factor の範囲"
             assert preset.investment_amount > 0, f"{key}: investment_amount > 0"
@@ -36,16 +36,16 @@ class TestPresetDefinitions:
     def test_stop_loss_less_than_max_drawdown(self):
         """損切りは最大DD以下であるべき"""
         for key, preset in PRESETS.items():
-            assert (
-                preset.stop_loss_percentage <= preset.max_drawdown_pct
-            ), f"{key}: stop_loss > max_drawdown"
+            assert preset.stop_loss_percentage <= preset.max_drawdown_pct, (
+                f"{key}: stop_loss > max_drawdown"
+            )
 
     def test_min_capital_leq_investment(self):
         """最低資金は投資額以下であるべき"""
         for key, preset in PRESETS.items():
-            assert (
-                preset.min_capital <= preset.investment_amount
-            ), f"{key}: min_capital > investment"
+            assert preset.min_capital <= preset.investment_amount, (
+                f"{key}: min_capital > investment"
+            )
 
     def test_unique_symbols_in_multi_presets(self):
         """マルチプリセットのシンボルは重複なし"""
@@ -90,8 +90,6 @@ class TestRecommendForCapital:
     def test_large_capital(self):
         results = recommend_for_capital(5000)
         assert len(results) > 0
-        # 大口向けが上位に来るはず
-        symbols = [p.symbol for p in results]
 
     def test_zero_capital(self):
         results = recommend_for_capital(0)

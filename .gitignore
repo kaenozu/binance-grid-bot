@@ -35,5 +35,6 @@ env/
 
 # Test cache
 .pytest_cache/
+.pytest_temp/
 .ruff_cache/
 .coverage
