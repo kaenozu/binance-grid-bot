@@ -113,6 +113,7 @@ class Portfolio:
         self.stats = PortfolioStats()
         self.stats.start_time = datetime.now()
         self.stats.last_update = datetime.now()
+        self._current_price: float = 0.0
 
         # 残高を成功するまでリトライ（起動时必须）
         max_retries = 10
@@ -124,13 +125,17 @@ class Portfolio:
 
                 _time.sleep(2**attempt)  # 指数バックオフ
         else:
-            raise RuntimeError(f"残高の取得に失敗しました（{max_retries}回リトライ後）")
+            raise RuntimeError(f"残高の取得に失败了（{max_retries}回リトライ後）")
 
         self.stats.initial_balance = self.stats.current_balance
 
         logger.info(
             f"ポートフォリオ初期化: 初期残高={self.stats.initial_balance:.2f} {quote_asset}"
         )
+
+    def set_current_price(self, price: float):
+        """現在価格を設定（未実現損益計算に使用）"""
+        self._current_price = price
 
     # ── 残高 ─────────────────────────────────────────────────────────
 
@@ -403,6 +408,8 @@ class Portfolio:
 
     def refresh_stats(self) -> PortfolioStats:
         self._update_balance()
+        if self._current_price > 0:
+            self.calculate_unrealized_pnl(self._current_price)
         return self.stats
 
     def get_trade_history(self, limit: int = 20) -> list[Trade]:
