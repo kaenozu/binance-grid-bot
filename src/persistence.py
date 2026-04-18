@@ -326,16 +326,24 @@ def update_trade_matched(order_id: int, matched: bool):
     logger.debug(f"matchedフラグ更新: order_id={order_id}, matched={matched}")
 
 
-def load_trades() -> list[dict]:
+def load_trades(symbol: str | None = None) -> list[dict]:
     with _db_lock:
         if not DB_PATH.exists():
             return []
         conn = _get_connection()
-        rows = conn.execute(
-            "SELECT timestamp, symbol, side, price, quantity, "
-            "order_id, grid_level, profit, matched "
-            "FROM trades ORDER BY id ASC"
-        ).fetchall()
+        if symbol:
+            rows = conn.execute(
+                "SELECT timestamp, symbol, side, price, quantity, "
+                "order_id, grid_level, profit, matched "
+                "FROM trades WHERE symbol = ? ORDER BY id ASC",
+                (symbol,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT timestamp, symbol, side, price, quantity, "
+                "order_id, grid_level, profit, matched "
+                "FROM trades ORDER BY id ASC"
+            ).fetchall()
     return [
         {
             "timestamp": datetime.fromisoformat(row["timestamp"]),
