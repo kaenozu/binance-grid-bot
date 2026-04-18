@@ -199,7 +199,7 @@ class Portfolio:
         )
 
         profit: float | None = None
-        matched_buy_order_id: int | None = None
+        matched_order_id: int | None = None
 
         with self._lock:
             self.trades.append(trade)
@@ -210,8 +210,12 @@ class Portfolio:
             if side == "SELL":
                 result = self._settle_sell(trade, grid_level)
                 if result is not None:
-                    profit, matched_buy_order_id = result
-                    # 月次/年次利益を更新
+                    profit, matched_order_id = result
+                    self._update_periodic_profit(profit, trade.timestamp)
+            elif side == "BUY":
+                result = self._settle_buyback(trade, grid_level)
+                if result is not None:
+                    profit, matched_order_id = result
                     self._update_periodic_profit(profit, trade.timestamp)
 
         try:
@@ -226,9 +230,8 @@ class Portfolio:
                 profit=trade.profit,
                 matched=trade.matched,
             )
-            # SELL約定時に対応するBUYのmatchedもDBに反映
-            if side == "SELL" and matched_buy_order_id is not None:
-                persistence_module.update_trade_matched(matched_buy_order_id, True)
+            if matched_order_id is not None:
+                persistence_module.update_trade_matched(matched_order_id, True)
         except Exception as e:
             logger.error(f"トレード保存失敗: {e}")
 
@@ -278,6 +281,47 @@ class Portfolio:
             f"売り数量={trade.quantity})"
         )
         return profit, buy_trade.order_id
+
+    def _settle_buyback(self, trade: Trade, grid_level: int) -> tuple[float, int] | None:
+        """ショート買い戻し決済（ロック内）。(profit, sell_order_id) または None。"""
+        sell_trades = [
+            t
+            for t in self.trades
+            if t.side == "SELL" and t.grid_level == grid_level and not t.matched
+        ]
+        if not sell_trades:
+            return None
+
+        sell_trade = sell_trades[-1]
+
+        for s in sell_trades:
+            s.matched = True
+
+        total_sell_qty = sum(t.quantity for t in sell_trades)
+        total_sell_proceeds = sum(t.price * t.quantity for t in sell_trades)
+        avg_sell_price = (
+            total_sell_proceeds / total_sell_qty if total_sell_qty > 0 else sell_trade.price
+        )
+
+        if self._fee_rate > 0:
+            profit, buyback_fee, sell_fee = calculate_net_profit(
+                trade.price, avg_sell_price, trade.quantity, self._fee_rate
+            )
+            self.stats.total_fees += buyback_fee + sell_fee
+        else:
+            profit = (avg_sell_price - trade.price) * trade.quantity
+
+        trade.profit = profit
+        trade.matched = True
+
+        self._update_settled_stats(profit)
+
+        logger.info(
+            f"ショート決済: グリッド {grid_level}, 利益={profit:.2f} "
+            f"(売り数量合計={total_sell_qty}, 平均売り={avg_sell_price:.4f}, "
+            f"買い戻し数量={trade.quantity})"
+        )
+        return profit, sell_trade.order_id
 
     def _update_settled_stats(self, profit: float):
         """決済統計を更新（ロック内で呼ぶこと）"""
@@ -377,6 +421,12 @@ class Portfolio:
             for trade in self.trades:
                 if trade.side == "BUY" and not trade.matched:
                     gross = (current_price - trade.price) * trade.quantity
+                    if self._fee_rate > 0:
+                        gross -= trade.price * trade.quantity * self._fee_rate
+                        gross -= current_price * trade.quantity * self._fee_rate
+                    unrealized += gross
+                elif trade.side == "SELL" and not trade.matched:
+                    gross = (trade.price - current_price) * trade.quantity
                     if self._fee_rate > 0:
                         gross -= trade.price * trade.quantity * self._fee_rate
                         gross -= current_price * trade.quantity * self._fee_rate
