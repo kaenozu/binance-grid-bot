@@ -181,6 +181,7 @@ class OrderManager:
             return 0
 
         if available <= 0:
+            logger.debug(f"上方向SELL配置: {base_asset} 残高なし")
             return 0
 
         # 既存SELL注文でロック済みの数量を差し引く

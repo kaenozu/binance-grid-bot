@@ -22,6 +22,42 @@ _db_lock = threading.RLock()
 _connection: sqlite3.Connection | None = None
 _TEST_MODE = False
 
+_STAT_COLUMNS = [
+    "id",
+    "symbol",
+    "investment_amount",
+    "grid_count",
+    "lower_price",
+    "upper_price",
+    "profit",
+    "trade_count",
+    "max_drawdown",
+    "current_price",
+    "status",
+    "matched",
+    "created_at",
+]
+_PORTFOLIO_STATS_COLUMNS = [
+    "initial_balance",
+    "current_balance",
+    "total_profit",
+    "realized_profit",
+    "unrealized_profit",
+    "total_trades",
+    "winning_trades",
+    "losing_trades",
+    "settled_trades",
+    "win_rate",
+    "avg_profit_per_trade",
+    "total_fees",
+    "peak_balance",
+    "max_drawdown",
+    "max_drawdown_pct",
+    "sharpe_ratio",
+]
+_JSON_COLUMNS = {"monthly_profit", "yearly_profit"}
+_ISO_COLUMNS = {"start_time", "last_update"}
+
 
 def set_db_path(path: Path | str):
     """DBパスを変更する（テスト用途のみ。_db_initialized と接続をリセット）
@@ -211,31 +247,10 @@ def save_grid_states(symbol: str, grids: list):
 
 
 def save_portfolio_stats(stats):
-    _STAT_COLUMNS = [
-        "initial_balance",
-        "current_balance",
-        "total_profit",
-        "realized_profit",
-        "unrealized_profit",
-        "total_trades",
-        "winning_trades",
-        "losing_trades",
-        "settled_trades",
-        "win_rate",
-        "avg_profit_per_trade",
-        "total_fees",
-        "peak_balance",
-        "max_drawdown",
-        "max_drawdown_pct",
-        "sharpe_ratio",
-    ]
-    _JSON_COLUMNS = {"monthly_profit", "yearly_profit"}
-    _ISO_COLUMNS = {"start_time", "last_update"}
-
     with _db_lock:
         conn = _get_connection()
         values: list = []
-        for col in _STAT_COLUMNS:
+        for col in _PORTFOLIO_STATS_COLUMNS:
             values.append(getattr(stats, col, 0))
         for col in _JSON_COLUMNS:
             values.append(json.dumps(getattr(stats, col, {})))
@@ -243,7 +258,7 @@ def save_portfolio_stats(stats):
             val = getattr(stats, col, None)
             values.append(val.isoformat() if val else None)
 
-        col_names = _STAT_COLUMNS + list(_JSON_COLUMNS) + list(_ISO_COLUMNS)
+        col_names = _PORTFOLIO_STATS_COLUMNS + list(_JSON_COLUMNS) + list(_ISO_COLUMNS)
         placeholders = ", ".join(["?"] * len(col_names))
         col_str = ", ".join(col_names)
         with conn:
@@ -281,27 +296,6 @@ def load_grid_states(symbol: str) -> list[dict] | None:
 
 
 def load_portfolio_stats() -> dict | None:
-    _NUMERIC_COLUMNS = [
-        "initial_balance",
-        "current_balance",
-        "total_profit",
-        "realized_profit",
-        "unrealized_profit",
-        "total_trades",
-        "winning_trades",
-        "losing_trades",
-        "settled_trades",
-        "win_rate",
-        "avg_profit_per_trade",
-        "total_fees",
-        "peak_balance",
-        "max_drawdown",
-        "max_drawdown_pct",
-        "sharpe_ratio",
-    ]
-    _JSON_COLUMNS = {"monthly_profit", "yearly_profit"}
-    _ISO_COLUMNS = {"start_time", "last_update"}
-
     with _db_lock:
         if not DB_PATH.exists():
             return None
@@ -311,7 +305,7 @@ def load_portfolio_stats() -> dict | None:
         return None
     row = rows[0]
     result: dict = {}
-    for col in _NUMERIC_COLUMNS:
+    for col in _PORTFOLIO_STATS_COLUMNS:
         result[col] = row[col]
     for col in _JSON_COLUMNS:
         result[col] = json.loads(row[col]) if row[col] else {}

@@ -20,7 +20,19 @@ logger = setup_logger("portfolio")
 
 @dataclass
 class Trade:
-    """取引記録"""
+    """取引記録
+
+    Attributes:
+        timestamp: 取引時刻
+        symbol: シンボル (e.g. "BTCUSDT")
+        side: 取引方向 ("BUY" or "SELL")
+        price: 約定価格
+        quantity: 数量
+        order_id: 注文ID
+        grid_level: グリッドレベル
+        profit: 決済利益（SELL時のみ）
+        matched: 決済済みフラグ
+    """
 
     timestamp: datetime
     symbol: str
@@ -35,7 +47,30 @@ class Trade:
 
 @dataclass
 class PortfolioStats:
-    """ポートフォリオ統計"""
+    """ポートフォリオ統計
+
+    Attributes:
+        initial_balance: 開始時の残高
+        current_balance: 現在の残高
+        total_profit: 総利益（実現+未実現）
+        realized_profit: 決済済み利益
+        unrealized_profit: 未実現損益
+        total_trades: 総取引回数
+        winning_trades: 利益確定回数
+        losing_trades: 損失確定回数
+        settled_trades: 決済済み取引数
+        win_rate: 勝率（%）
+        avg_profit_per_trade: 平均利益/取引
+        total_fees: 手数料合計
+        start_time: 開始時刻
+        peak_balance: 過去最高残高
+        max_drawdown: 最大ドローダウン（USD）
+        max_drawdown_pct: 最大ドローダウン率（%）
+        sharpe_ratio: シャープレシオ（年間・推定）
+        monthly_profit: 月次利益 {"YYYY-MM": profit}
+        yearly_profit: 年次利益 {"YYYY": profit}
+        last_update: 最終更新時刻
+    """
 
     initial_balance: float = 0.0
     current_balance: float = 0.0
@@ -50,14 +85,14 @@ class PortfolioStats:
     avg_profit_per_trade: float = 0.0
     total_fees: float = 0.0
     start_time: datetime | None = None
-    # ── リスク指標 ─────────────────────────────────────────────────
-    peak_balance: float = 0.0  # 過去最高残高（実現利益込み）
-    max_drawdown: float = 0.0  # 最大ドローダウン（USD）
-    max_drawdown_pct: float = 0.0  # 最大ドローダウン率（%）
-    sharpe_ratio: float = 0.0  # シャープレシオ（年間・推定）
-    # ── 月次/年次サマリー ───────────────────────────────────────────
-    monthly_profit: dict[str, float] = field(default_factory=dict)  # {"YYYY-MM": profit}
-    yearly_profit: dict[str, float] = field(default_factory=dict)  # {"YYYY": profit}
+    # リスク指標
+    peak_balance: float = 0.0
+    max_drawdown: float = 0.0
+    max_drawdown_pct: float = 0.0
+    sharpe_ratio: float = 0.0
+    # サマリー
+    monthly_profit: dict[str, float] = field(default_factory=dict)
+    yearly_profit: dict[str, float] = field(default_factory=dict)
     last_update: datetime | None = None
 
 
@@ -124,14 +159,7 @@ class Portfolio:
             )
             for r in trade_records
         ]
-        if len(trades) > self._max_trades:
-            unmatched = [t for t in trades if t.side == "BUY" and not t.matched]
-            evictable = [t for t in trades if t.side == "SELL" or t.matched]
-            keep_count = self._max_trades - len(unmatched)
-            matched_to_keep = evictable[-keep_count:] if keep_count > 0 else []
-            self.trades = unmatched + matched_to_keep
-        else:
-            self.trades = trades
+        self.trades = self._truncate_trades(trades)
         logger.info(f"トレード履歴を復元: {len(self.trades)} 件 (DB内: {len(trade_records)} 件)")
 
     def record_trade(
@@ -225,7 +253,9 @@ class Portfolio:
 
         if self.stats.settled_trades > 0:
             self.stats.win_rate = self.stats.winning_trades / self.stats.settled_trades * 100
-        self.stats.avg_profit_per_trade = self.stats.realized_profit / self.stats.settled_trades
+            self.stats.avg_profit_per_trade = self.stats.realized_profit / self.stats.settled_trades
+        else:
+            self.stats.avg_profit_per_trade = 0.0
 
     # ── トレード検索 ─────────────────────────────────────────────────
 
@@ -352,12 +382,18 @@ class Portfolio:
 
     # ── 内部ヘルパー ────────────────────────────────────────────────
 
+    def _truncate_trades(self, trades: list[Trade]) -> list[Trade]:
+        """トレードリストが上限を超えた場合、古いマッチ済み/売りトレードを削除"""
+        if len(trades) <= self._max_trades:
+            return trades
+        unmatched = [t for t in trades if t.side == "BUY" and not t.matched]
+        evictable = [t for t in trades if t.side == "SELL" or t.matched]
+        keep_count = self._max_trades - len(unmatched)
+        matched_to_keep = evictable[-keep_count:] if keep_count > 0 else []
+        return unmatched + matched_to_keep
+
     def _evict_trades_if_needed(self):
         """トレードリストが上限を超えた場合、古いマッチ済み/売りトレードを削除（ロック内で呼ぶこと）"""
         if len(self.trades) <= self._max_trades:
             return
-        unmatched_buys = [t for t in self.trades if t.side == "BUY" and not t.matched]
-        evictable = [t for t in self.trades if t.side == "SELL" or t.matched]
-        keep_count = self._max_trades - len(unmatched_buys)
-        matched_to_keep = evictable[-keep_count:] if keep_count > 0 else []
-        self.trades = unmatched_buys + matched_to_keep
+        self.trades = self._truncate_trades(self.trades)

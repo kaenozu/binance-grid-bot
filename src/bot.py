@@ -16,32 +16,13 @@ from src.risk_manager import RiskManager
 from src.status_display import display_status, get_summary
 from src.ws_client import BinanceWebSocketClient
 from utils.logger import setup_logger
+from utils.profit import estimate_cycle_profit
 
 logger = setup_logger("bot")
 
 # JPYペアは為替レートを考慮（1 USD ≈ 150 JPY）
-# 最低1往復利益: 手数料の2倍以上 + 少しのマージン
-_MIN_PROFIT_USDT = 0.3  # USDT基準 (0.3 USDT ≈ 45 JPY)
-
-
-def _estimate_cycle_profit(
-    current_price: float,
-    lower_price: float,
-    upper_price: float,
-    grid_count: int,
-    investment_amount: float,
-    fee_rate: float,
-) -> float:
-    """グリッド設定から1往復あたりの概算純利益を見積もる。"""
-    if current_price <= 0 or lower_price <= 0 or upper_price <= lower_price or grid_count <= 0:
-        return 0.0
-
-    amount_per_grid = investment_amount / grid_count
-    raw_qty = amount_per_grid / current_price
-    grid_spacing = (upper_price - lower_price) / grid_count
-    gross = raw_qty * grid_spacing
-    fees = amount_per_grid * (fee_rate * 2)
-    return gross - fees
+# 最低1往返利益: 手数料の2倍以上 + 少しのマージン
+_MIN_PROFIT_USDT = 0.3  # USDT基準 (0.3 USDT ≈ 45 JPY、75 JPY)
 
 
 class GridBot:
@@ -82,7 +63,7 @@ class GridBot:
             lower_price=lower_price,
             upper_price=upper_price,
         )
-        estimated_cycle_profit = _estimate_cycle_profit(
+        estimated_cycle_profit = estimate_cycle_profit(
             current_price=self.current_price,
             lower_price=lower_price,
             upper_price=upper_price,
@@ -234,7 +215,7 @@ class GridBot:
             if per_grid < min_notional:
                 continue
 
-            est = _estimate_cycle_profit(
+            est = estimate_cycle_profit(
                 current_price=self.current_price,
                 lower_price=lower_price,
                 upper_price=upper_price,
