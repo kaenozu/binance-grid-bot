@@ -292,7 +292,7 @@ class GridBot:
                 f"取引={self.portfolio.stats.total_trades}件"
             )
 
-        trade_records = persistence.load_trades()
+        trade_records = persistence.load_trades(self.symbol)
         if trade_records:
             self.portfolio.restore_trades(trade_records)
             self._restore_open_position_quantities()
