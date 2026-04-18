@@ -22,6 +22,9 @@ _SETTING_NAMES = [name for name in dir(Settings) if name.isupper() and not name.
 @pytest.fixture(autouse=True, scope="function")
 def clean_db(tmp_path):
     """テスト実行中は本番DBではなく一時DBを使用する（全テスト共通）"""
+    import gc
+    import os
+
     from src import persistence
 
     persistence._reset_connection()
@@ -29,29 +32,46 @@ def clean_db(tmp_path):
     persistence.set_db_path(db_path)
     yield
     persistence._reset_connection()
+    gc.collect()
+    # 明示的にDBファイルを削除（Windowsのファイルロック問題対策）
+    try:
+        for suffix in ("", "-wal", "-shm"):
+            p = str(db_path) + suffix
+            if os.path.exists(p):
+                os.remove(p)
+    except Exception:
+        pass
 
 
 @pytest.fixture(autouse=True)
 def fast_sleep(monkeypatch):
     """全テストで time.sleep を即座に返す（テスト高速化）"""
     import time as _time
+
     _real_sleep = _time.sleep
     _sleep_calls = []
 
     class _FakeTime:
         """time モジュールの偽装。sleep は記録だけして即座に返す"""
+
         sleep = staticmethod(lambda s: _sleep_calls.append(s))
         time = staticmethod(_time.time)
         monotonic = staticmethod(_time.monotonic)
 
     # 各モジュールの time.sleep を即座に返すよう差し替え
     modules = [
-        "time", "src.bot", "src.binance_client", "src.ws_client",
-        "src.multi_bot", "src.order_sync",
+        "time",
+        "src.bot",
+        "src.binance_client",
+        "src.ws_client",
+        "src.multi_bot",
+        "src.order_sync",
     ]
     for mod in modules:
         try:
-            monkeypatch.setattr(f"{mod}.sleep", lambda s, _c=_sleep_calls: _c.append(s), raising=False)
+            monkeypatch.setattr(
+                f"{mod}.sleep", lambda s, _c=_sleep_calls: _c.append(s), raising=False
+            )
         except AttributeError:
             pass
 

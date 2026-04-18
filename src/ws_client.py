@@ -315,7 +315,9 @@ class BinanceWebSocketClient:
         """listenKey エラーの詳細をログ向けに整形する"""
         status_code = getattr(error, "status_code", None)
         endpoint = getattr(error, "endpoint", None) or "unknown"
-        return f"listenKey が利用できません (status={status_code}, endpoint={endpoint}, error={error})"
+        return (
+            f"listenKey が利用できません (status={status_code}, endpoint={endpoint}, error={error})"
+        )
 
     @staticmethod
     def _is_unsupported_listen_key_error(error: Exception) -> bool:

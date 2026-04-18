@@ -79,11 +79,19 @@ class Portfolio:
         self.stats.start_time = datetime.now()
         self.stats.last_update = datetime.now()
 
-        self._update_balance()
-        if self.stats.current_balance > 0:
-            self.stats.initial_balance = self.stats.current_balance
+        # 残高を成功するまでリトライ（起動时必须）
+        max_retries = 10
+        for attempt in range(max_retries):
+            if self._update_balance():
+                break
+            if attempt < max_retries - 1:
+                import time as _time
+
+                _time.sleep(2**attempt)  # 指数バックオフ
         else:
-            logger.error("残高取得失敗: initial_balance を設定できませんでした")
+            raise RuntimeError(f"残高の取得に失敗しました（{max_retries}回リトライ後）")
+
+        self.stats.initial_balance = self.stats.current_balance
 
         logger.info(
             f"ポートフォリオ初期化: 初期残高={self.stats.initial_balance:.2f} {quote_asset}"
@@ -91,20 +99,25 @@ class Portfolio:
 
     # ── 残高 ─────────────────────────────────────────────────────────
 
-    def _update_balance(self):
-        """残高を更新。失敗時は前回の値を維持する"""
+    def _update_balance(self) -> bool:
+        """残高を更新。失敗時はFalseを返す"""
         try:
             balances = self.client.get_account_balance()
             if self.quote_asset in balances:
                 info = balances[self.quote_asset]
                 new_balance = info["free"] + info["locked"]
-                # 異常に低い値が返ってきた場合は更新しない（APIの一時的な不具合対策）
                 if new_balance >= 0:
                     self.stats.current_balance = new_balance
+                    return True
                 else:
                     logger.warning(f"異常な残高値を受信: {new_balance}。更新をスキップします。")
+                    return False
+            else:
+                logger.warning(f"残高情報に {self.quote_asset} が含まれていません")
+                return False
         except Exception as e:
-            logger.error(f"残高取得失敗: {e}。前回の残高を維持します。")
+            logger.error(f"残高取得失敗: {e}")
+            return False
 
     # ── トレード記録 ─────────────────────────────────────────────────
 
@@ -191,25 +204,46 @@ class Portfolio:
 
     def _settle_sell(self, trade: Trade, grid_level: int) -> tuple[float, int] | None:
         """売り決済処理（ロック内で呼ぶこと）。(profit, buy_order_id) を返すか None。"""
-        buy_trade = self._find_matching_buy_locked(grid_level)
-        if not buy_trade:
+        # 同じグリッドの全未決済BUYを取得
+        buy_trades = [
+            t
+            for t in self.trades
+            if t.side == "BUY" and t.grid_level == grid_level and not t.matched
+        ]
+        if not buy_trades:
             return None
+
+        # 最初の(最新の) buy_trade を代表として使用
+        buy_trade = buy_trades[-1]
+
+        # 同じグリッドの全ての未決済BUYをマッチ済みに設定（重複防止）
+        for b in buy_trades:
+            b.matched = True
+
+        # 数量の合計（複数_BUY_がある場合の平均単価計算用）
+        total_buy_qty = sum(t.quantity for t in buy_trades)
+        # 加重平均買い価格を計算
+        total_buy_cost = sum(t.price * t.quantity for t in buy_trades)
+        avg_buy_price = total_buy_cost / total_buy_qty if total_buy_qty > 0 else buy_trade.price
 
         if self._fee_rate > 0:
             profit, buy_fee, sell_fee = calculate_net_profit(
-                buy_trade.price, trade.price, trade.quantity, self._fee_rate
+                avg_buy_price, trade.price, trade.quantity, self._fee_rate
             )
             self.stats.total_fees += buy_fee + sell_fee
         else:
-            profit = (trade.price - buy_trade.price) * trade.quantity
+            profit = (trade.price - avg_buy_price) * trade.quantity
 
         trade.profit = profit
-        buy_trade.matched = True
         trade.matched = True
 
         self._update_settled_stats(profit)
 
-        logger.info(f"取引記録: グリッド {grid_level}, 利益={profit:.2f}")
+        logger.info(
+            f"取引記録: グリッド {grid_level}, 利益={profit:.2f} "
+            f"(買い数量合計={total_buy_qty}, 平均={avg_buy_price:.4f}, "
+            f"売り数量={trade.quantity})"
+        )
         return profit, buy_trade.order_id
 
     def _update_settled_stats(self, profit: float):

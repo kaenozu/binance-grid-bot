@@ -17,7 +17,7 @@ from urllib3.util.retry import Retry
 from config.settings import Settings
 from src.api_weight import APIWeightTracker
 from utils.logger import setup_logger
-from utils.precision import get_precision, quantize_down, quantize_up, format_decimal
+from utils.precision import format_decimal, get_precision, quantize_down, quantize_up
 
 logger = setup_logger("binance_client")
 
@@ -168,8 +168,7 @@ class BinanceClient:
             if response.status_code == 410 and endpoint.endswith("/userDataStream"):
                 body = (response.text or "").strip() or "<empty>"
                 logger.warning(
-                    "listenKey endpoint が 410 を返しました。"
-                    f"endpoint={endpoint}, body={body}"
+                    f"listenKey endpoint が 410 を返しました。endpoint={endpoint}, body={body}"
                 )
                 raise BinanceAPIError(
                     "listenKey endpoint unavailable (410)",
@@ -310,7 +309,10 @@ class BinanceClient:
         normalized_price = price
         if price is not None and tick_size > 0:
             rounding = "down" if side == "BUY" else "up"
-            normalized_price = quantize_down(price, tick_size) if rounding == "down" else quantize_up(price, tick_size)
+            if rounding == "down":
+                normalized_price = quantize_down(price, tick_size)
+            else:
+                normalized_price = quantize_up(price, tick_size)
 
         if price is not None and min_notional > 0:
             normalized_price_val = normalized_price if normalized_price is not None else price
@@ -318,9 +320,14 @@ class BinanceClient:
             if notional < min_notional:
                 if price is None or normalized_price_val <= 0:
                     raise BinanceAPIError(
-                        f"{side} 注文の額が最小名目金額を下回っています: {notional:.8f} < {min_notional}"
+                        f"{side} 注文の額が最小名目金額を下回っています: "
+                        f"{notional:.8f} < {min_notional}"
                     )
-                needed_qty = quantize_up(min_notional / normalized_price_val, step_size) if step_size > 0 else (min_notional / normalized_price_val)
+                needed_qty = (
+                    quantize_up(min_notional / normalized_price_val, step_size)
+                    if step_size > 0
+                    else (min_notional / normalized_price_val)
+                )
                 if max_qty > 0 and needed_qty > max_qty:
                     raise BinanceAPIError(
                         f"{side} 注文の数量が最大数量を上回っています: {needed_qty} > {max_qty}"
@@ -329,7 +336,8 @@ class BinanceClient:
                 notional = normalized_qty * normalized_price_val
                 if notional < min_notional:
                     raise BinanceAPIError(
-                        f"{side} 注文の額が最小名目金額を下回っています: {notional:.8f} < {min_notional}"
+                        f"{side} 注文の額が最小名目金額を下回っています: "
+                        f"{notional:.8f} < {min_notional}"
                     )
 
         return normalized_qty, normalized_price
@@ -429,9 +437,7 @@ class BinanceClient:
                 if normalized_price
                 else "MARKET"
             )
-            logger.info(
-                f"注文実行: {side} {normalized_qty} {symbol} @ {price_str} (raw={price})"
-            )
+            logger.info(f"注文実行: {side} {normalized_qty} {symbol} @ {price_str} (raw={price})")
             try:
                 return self._make_request("POST", "/api/v3/order", params, signed=True)
             except BinanceAPIError as e:
@@ -442,9 +448,7 @@ class BinanceClient:
                     )
                     self.invalidate_symbol_cache(symbol)
                     continue
-                logger.error(
-                    f"注文失敗詳細: {side} {normalized_qty} {symbol} @ {price_str} -> {e}"
-                )
+                logger.error(f"注文失敗詳細: {side} {normalized_qty} {symbol} @ {price_str} -> {e}")
                 raise
 
         raise BinanceAPIError(f"注文失敗: {side} {symbol}")

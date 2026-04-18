@@ -3,7 +3,6 @@
 import time
 from unittest.mock import MagicMock, patch
 
-from config.settings import Settings
 from src.bot import GridBot
 
 
