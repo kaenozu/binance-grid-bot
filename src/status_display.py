@@ -22,6 +22,7 @@ def get_summary(
     portfolio: Portfolio,
 ) -> dict:
     """集約ステータスを返す"""
+    portfolio.set_current_price(current_price)
     stats = portfolio.refresh_stats()
     filled = sum(1 for g in strategy.grids if g.position_filled)
     return {
@@ -44,6 +45,7 @@ def display_status(
     detail: bool = False,
 ):
     """ステータスを表示（detail=Trueで詳細版）"""
+    portfolio.set_current_price(current_price)
     stats = portfolio.refresh_stats()
     filled = sum(1 for g in strategy.grids if g.position_filled)
     logger.info(f"価格={current_price:.2f} ポジション={filled} 利益={stats.total_profit:+.2f}")

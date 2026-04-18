@@ -547,6 +547,7 @@ class GridBot:
                     )
                     continue
                 logger.info(f"グリッド {fill.grid}: 買い約定、売り注文配置")
+                grid.position_filled = True
                 grid.filled_quantity = fill.quantity
                 profit = self.portfolio.record_trade(
                     side=fill.side,
@@ -559,6 +560,8 @@ class GridBot:
 
             # ── 下方向: SELL約定 → 再BUY配置 ──
             elif fill.side == "SELL" and grid.position_filled:
+                grid.position_filled = False
+                grid.filled_quantity = None
                 profit = self.portfolio.record_trade(
                     side=fill.side,
                     price=fill.price,
@@ -576,6 +579,7 @@ class GridBot:
                 and grid.short_sell_price
                 and fill.price >= grid.short_sell_price
             ):
+                grid.short_position_filled = True
                 grid.short_filled_quantity = fill.quantity
                 self.strategy.mark_short_filled(fill.grid, fill.order_id)
                 profit = self.portfolio.record_trade(
@@ -599,6 +603,8 @@ class GridBot:
             # ── 上方向: BUYBACK約定（ショート決済）→ 再SELL配置 ──
             elif fill.side == "BUY" and grid.short_position_filled:
                 self.strategy.mark_short_closed(fill.grid, fill.order_id)
+                grid.short_position_filled = False
+                grid.short_filled_quantity = None
                 profit = self.portfolio.record_trade(
                     side=fill.side,
                     price=fill.price,
