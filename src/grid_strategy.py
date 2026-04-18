@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from config.settings import Settings
 from utils.logger import setup_logger
 from utils.precision import quantize_down, quantize_up
+from utils.profit import estimate_cycle_profit as _estimate_cycle_profit
 
 logger = setup_logger("grid_strategy")
 
@@ -100,7 +101,10 @@ class GridStrategy:
         spacing = self.grid_spacing
         fee_rate = Settings.TRADING_FEE_RATE
         total_fee_rate = fee_rate * 2
-        profit_rate = spacing / (self.lower_price + spacing / 2) if self.lower_price > 0 else 0
+        if self.lower_price <= 0:
+            profit_rate = 0
+        else:
+            profit_rate = spacing / (self.lower_price + spacing / 2)
 
         if profit_rate < total_fee_rate:
             logger.warning(
@@ -187,11 +191,14 @@ class GridStrategy:
         if effective_price <= 0 or self.grid_count <= 0:
             return 0.0
 
-        amount_per_grid = self.investment_amount / self.grid_count
-        raw_qty = amount_per_grid / effective_price
-        gross = raw_qty * self.grid_spacing
-        fees = amount_per_grid * (effective_fee_rate * 2)
-        return gross - fees
+        return _estimate_cycle_profit(
+            current_price=effective_price,
+            lower_price=self.lower_price,
+            upper_price=self.upper_price,
+            grid_count=self.grid_count,
+            investment_amount=self.investment_amount,
+            fee_rate=effective_fee_rate,
+        )
 
     # ── アクティブグリッド ──────────────────────────────────────────
 

@@ -181,6 +181,7 @@ class OrderManager:
             return 0
 
         if available <= 0:
+            logger.debug(f"上方向SELL配置: {base_asset} 残高なし")
             return 0
 
         # 既存SELL注文でロック済みの数量を差し引く
@@ -206,6 +207,8 @@ class OrderManager:
         for grid in short_grids:
             if remaining <= 0:
                 break
+            if grid.short_sell_price is None:
+                continue
             qty = min(qty_per_grid, remaining)
             qty = self._normalize_quantity(qty, symbol_info)
             if qty <= 0:
