@@ -184,9 +184,7 @@ class OrderManager:
             return 0
 
         # 既存SELL注文でロック済みの数量を差し引く
-        sell_locked = sum(
-            o.quantity for o in self._active_orders.values() if o.side == "SELL"
-        )
+        sell_locked = sum(o.quantity for o in self._active_orders.values() if o.side == "SELL")
         surplus = available - sell_locked
         surplus = self._normalize_quantity(surplus, symbol_info)
         if surplus <= 0:
@@ -212,9 +210,9 @@ class OrderManager:
             qty = self._normalize_quantity(qty, symbol_info)
             if qty <= 0:
                 continue
-            ok, err = self._try_place(
-                grid.level, "SELL", grid.short_sell_price, qty, symbol_info=symbol_info
-            )
+            price = grid.short_sell_price
+            assert price is not None, "short_sell_price must not be None"
+            ok, err = self._try_place(grid.level, "SELL", price, qty, symbol_info=symbol_info)
             if ok:
                 placed += 1
                 remaining -= qty

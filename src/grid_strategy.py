@@ -9,7 +9,7 @@ from dataclasses import dataclass
 
 from config.settings import Settings
 from utils.logger import setup_logger
-from utils.precision import quantize_down, quantize_up, format_decimal
+from utils.precision import quantize_down, quantize_up
 
 logger = setup_logger("grid_strategy")
 
@@ -120,11 +120,11 @@ class GridStrategy:
                     else None
                 ),
                 short_sell_price=(
-                    round(self.lower_price + spacing * (i + 1), precision)
-                    if i > 0
-                    else None
+                    round(self.lower_price + spacing * (i + 1), precision) if i > 0 else None
                 ),
-                short_buyback_price=round(self.lower_price + spacing * i, precision) if i > 0 else None,
+                short_buyback_price=(
+                    round(self.lower_price + spacing * i, precision) if i > 0 else None
+                ),
             )
             for i in range(self.grid_count)
         ]
@@ -173,7 +173,9 @@ class GridStrategy:
 
         return qty
 
-    def estimate_cycle_profit(self, price: float | None = None, fee_rate: float | None = None) -> float:
+    def estimate_cycle_profit(
+        self, price: float | None = None, fee_rate: float | None = None
+    ) -> float:
         """1往復（BUY→SELL）の概算純利益を返す。
 
         価格は現在価格を使う。BUY/SELL の実効価格差はグリッド間隔、
@@ -220,10 +222,7 @@ class GridStrategy:
     def get_active_short_buyback_grids(self) -> list[GridLevel]:
         """上方向BUYBACK注文を配置すべきグリッド（ショートポジション持ち）"""
         return [
-            g
-            for g in self.grids
-            if g.short_position_filled
-            and g.short_buyback_price is not None
+            g for g in self.grids if g.short_position_filled and g.short_buyback_price is not None
         ]
 
     # ── ポジション管理 ───────────────────────────────────────────────

@@ -5,13 +5,12 @@ import traceback
 from pathlib import Path
 
 from config.settings import Settings
-from src import exporter, order_sync, persistence
+from src import order_sync, persistence
 from src.api_weight import APIWeightTracker
 from src.binance_client import BinanceClient
 from src.grid_strategy import GridStrategy
 from src.order_manager import OrderManager, OrderPlacementResult
 from src.portfolio import Portfolio
-from src.position_closer import close_open_positions
 from src.risk_manager import RiskManager
 from src.status_display import display_status, get_summary
 from src.ws_client import BinanceWebSocketClient
@@ -116,7 +115,8 @@ class GridBot:
         )
         if estimated_cycle_profit < self._min_cycle_profit():
             logger.warning(
-                f"現在設定の推定1往復利益が低いです: {estimated_cycle_profit:.2f} {self.quote_asset}. "
+                f"現在設定の推定1往復利益が低いです: "
+                f"{estimated_cycle_profit:.2f} {self.quote_asset}. "
                 "GRID_COUNT を減らすか投資額を増やしてください。"
             )
 
@@ -160,7 +160,8 @@ class GridBot:
         configured = Settings.INVESTMENT_AMOUNT
         try:
             balances = self._retry_api(
-                lambda: self.client.get_account_balance(), "残高取得",
+                lambda: self.client.get_account_balance(),
+                "残高取得",
             )
             quote_balance = balances.get(self.quote_asset, {}).get("free", 0.0)
             self._live_quote_balance = quote_balance
@@ -178,9 +179,7 @@ class GridBot:
                     logger.info(f"投資額: {resolved:.2f} {self.quote_asset}（設定値を採用）")
                 return resolved
 
-            logger.info(
-                f"投資額: {quote_balance:.2f} {self.quote_asset}（残高全額を自動使用）"
-            )
+            logger.info(f"投資額: {quote_balance:.2f} {self.quote_asset}（残高全額を自動使用）")
             return quote_balance
         except Exception as e:
             logger.error(f"残高取得失敗: {e}")
@@ -303,6 +302,8 @@ class GridBot:
         portfolio_stats = persistence.load_portfolio_stats()
         if portfolio_stats:
             persistence.restore_stats_to(self.portfolio.stats, portfolio_stats)
+            # initial_balance は毎回現在のAPI残高で上書き（DBの古い値を無視）
+            self.portfolio.stats.initial_balance = self.portfolio.stats.current_balance
             logger.info(
                 f"ポートフォリオ統計を復元: "
                 f"初期残高={self.portfolio.stats.initial_balance:.2f}, "
@@ -498,9 +499,7 @@ class GridBot:
     def _handle_tick_error(self, e: Exception) -> None:
         """ティック処理エラーのハンドリング（停止せず無限リトライ）"""
         self.consecutive_errors += 1
-        logger.warning(
-            f"ティック処理エラー ({self.consecutive_errors}回目、継続します): {e}"
-        )
+        logger.warning(f"ティック処理エラー ({self.consecutive_errors}回目、継続します): {e}")
         logger.debug(f"スタックトレース:\n{traceback.format_exc()}")
 
         # 通信エラーは停止せずリトライし続ける
@@ -569,32 +568,44 @@ class GridBot:
                 logger.info(f"グリッド {fill.grid}: 買い約定、売り注文配置")
                 grid.filled_quantity = fill.quantity
                 profit = self.portfolio.record_trade(
-                    side=fill.side, price=fill.price, quantity=fill.quantity,
-                    order_id=fill.order_id, grid_level=fill.grid,
+                    side=fill.side,
+                    price=fill.price,
+                    quantity=fill.quantity,
+                    order_id=fill.order_id,
+                    grid_level=fill.grid,
                 )
                 self._place_sell_for_grid(fill.grid, fill.quantity)
 
             # ── 下方向: SELL約定 → 再BUY配置 ──
             elif fill.side == "SELL" and grid.position_filled:
                 profit = self.portfolio.record_trade(
-                    side=fill.side, price=fill.price, quantity=fill.quantity,
-                    order_id=fill.order_id, grid_level=fill.grid,
+                    side=fill.side,
+                    price=fill.price,
+                    quantity=fill.quantity,
+                    order_id=fill.order_id,
+                    grid_level=fill.grid,
                 )
                 self.risk_manager.record_position_close(profit or 0.0)
                 logger.info(f"グリッド {fill.grid}: 決済完了、再注文配置")
                 self._place_grid_orders_for_level(fill.grid)
 
             # ── 上方向: SELL約定（ショート開始）→ BUYBACK配置 ──
-            elif fill.side == "SELL" and grid.short_sell_price and fill.price >= grid.short_sell_price:
+            elif (
+                fill.side == "SELL"
+                and grid.short_sell_price
+                and fill.price >= grid.short_sell_price
+            ):
                 grid.short_filled_quantity = fill.quantity
                 self.strategy.mark_short_filled(fill.grid, fill.order_id)
                 profit = self.portfolio.record_trade(
-                    side=fill.side, price=fill.price, quantity=fill.quantity,
-                    order_id=fill.order_id, grid_level=fill.grid,
+                    side=fill.side,
+                    price=fill.price,
+                    quantity=fill.quantity,
+                    order_id=fill.order_id,
+                    grid_level=fill.grid,
                 )
                 # BUYBACK注文を配置
                 if grid.short_buyback_price:
-                    buyback_qty = fill.quantity
                     try:
                         self.order_manager.place_buy_order_for_grid(fill.grid)
                         logger.info(
@@ -608,8 +619,11 @@ class GridBot:
             elif fill.side == "BUY" and grid.short_position_filled:
                 self.strategy.mark_short_closed(fill.grid, fill.order_id)
                 profit = self.portfolio.record_trade(
-                    side=fill.side, price=fill.price, quantity=fill.quantity,
-                    order_id=fill.order_id, grid_level=fill.grid,
+                    side=fill.side,
+                    price=fill.price,
+                    quantity=fill.quantity,
+                    order_id=fill.order_id,
+                    grid_level=fill.grid,
                 )
                 logger.info(f"グリッド {fill.grid}: ショートBUYBACK約定、再SELL配置")
                 # 再度SELL指値を配置
@@ -624,7 +638,8 @@ class GridBot:
         """ショート再SELL用の数量を決定（手持ちSOLから）"""
         try:
             balances = self._retry_api(
-                lambda: self.client.get_account_balance(), "残高取得(short)",
+                lambda: self.client.get_account_balance(),
+                "残高取得(short)",
             )
             base_asset = symbol_info.get("base_asset", "")
             available = float(balances.get(base_asset, {}).get("free", 0))
@@ -633,6 +648,7 @@ class GridBot:
         if available <= 0:
             return 0
         from utils.precision import quantize_down
+
         step_size = float(symbol_info.get("step_size", 0) or 0)
         if step_size > 0:
             return quantize_down(available, step_size)
@@ -687,58 +703,35 @@ class GridBot:
 
     # ── 停止処理 ───────────────────────────────────────────────────
 
-    def _shutdown_core(self, close_positions=False):
-        """停止時の共通処理"""
-        self._persist_state()
-        canceled = self.order_manager.cancel_all_orders()
-        logger.info(f"キャンセル完了: {canceled} 件")
-
-        if close_positions:
-            close_open_positions(self.client, self.strategy, self.portfolio)
-
-        report = self.portfolio.generate_report()
-        logger.info("\n" + report)
-        return report
-
     def _export_on_stop(self):
-        """停止時にトレード履歴をエクスポート
+        from src.bot_shutdown import export_on_stop
 
-        メモリ上のtradesが空の場合はDBから再読み込みする。
-        """
-        trades = self.portfolio.trades
-        if not trades:
-            records = persistence.load_trades()
-            if records:
-                self.portfolio.restore_trades(records)
-                trades = self.portfolio.trades
-        if not trades:
-            logger.info("エクスポート対象のトレードなし")
-            return
-        try:
-            export_dir = Path("data") / "exports"
-            timestamp_str = time.strftime("%Y%m%d_%H%M%S")
-            csv_path = export_dir / f"trades_{timestamp_str}.csv"
-            json_path = export_dir / f"trades_{timestamp_str}.json"
-            count = exporter.export_trades_csv(trades, csv_path)
-            exporter.export_trades_json(trades, json_path)
-            logger.info(f"トレード履歴をエクスポート: {count} 件 -> {export_dir}")
-        except Exception as e:
-            logger.error(f"エクスポート失敗: {e}")
+        export_on_stop(self.portfolio)
 
     def _emergency_stop(self):
-        """緊急停止（オープンポジションを成行決済）"""
+        from src.bot_shutdown import emergency_stop
+
         self.is_running = False
-        logger.warning("緊急停止処理開始...")
-        report = self._shutdown_core(close_positions=True)
-        print(report)
-        logger.info("緊急停止完了")
+        emergency_stop(
+            self.client, self.strategy, self.order_manager, self.portfolio, self._persist_state
+        )
+
+    def _close_open_positions(self):
+        from src.bot_shutdown import close_open_positions
+
+        close_open_positions(self.client, self.strategy, self.portfolio)
 
     def stop(self):
-        """ボット停止"""
+        from config.settings import Settings
+        from src.bot_shutdown import stop_bot
+
         self.is_running = False
-        logger.info("ボット停止中...")
-        if self.ws_client:
-            self.ws_client.stop()
-        self._shutdown_core(close_positions=Settings.CLOSE_ON_STOP)
-        self._export_on_stop()
-        logger.info("ボット停止完了")
+        stop_bot(
+            self.client,
+            self.strategy,
+            self.order_manager,
+            self.portfolio,
+            self._persist_state,
+            Settings.CLOSE_ON_STOP,
+            self.ws_client,
+        )

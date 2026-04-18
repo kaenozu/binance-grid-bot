@@ -4,12 +4,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.risk_manager import RiskManager
-from tests.conftest import BASE_PRICE, LOWER_PRICE
-
 # 損切り価格: lower_price * (1 - STOP_LOSS_PERCENTAGE/100)
 # Settings.STOP_LOSS_PERCENTAGE is loaded from .env (currently 20%)
 from config.settings import Settings
+from src.risk_manager import RiskManager
+from tests.conftest import BASE_PRICE, LOWER_PRICE
+
 STOP_LOSS = LOWER_PRICE * (1 - Settings.STOP_LOSS_PERCENTAGE / 100)
 
 
