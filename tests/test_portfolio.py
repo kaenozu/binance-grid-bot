@@ -290,8 +290,8 @@ class TestPortfolio:
         portfolio.calculate_unrealized_pnl(BASE_PRICE)
         assert portfolio.stats.sharpe_ratio == 0.0
 
-    def test_peak_balance_starts_at_zero(self, portfolio):
-        """初期ピーク残高は0"""
-        assert portfolio.stats.peak_balance == 0.0
+    def test_peak_balance_starts_at_initial(self, portfolio):
+        """初期ピーク残高は初期残高と同じ"""
+        assert portfolio.stats.peak_balance == portfolio.stats.initial_balance
         assert portfolio.stats.max_drawdown == 0.0
         assert portfolio.stats.max_drawdown_pct == 0.0

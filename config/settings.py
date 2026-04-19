@@ -46,25 +46,31 @@ class Settings:
 
     # 取引設定
     TRADING_SYMBOL: str = os.getenv("TRADING_SYMBOL", "BTCUSDT")
-    GRID_COUNT: int = _safe_int(os.getenv("GRID_COUNT"), 10)
-    LOWER_PRICE: float | None = _safe_float_optional(os.getenv("LOWER_PRICE"))
-    UPPER_PRICE: float | None = _safe_float_optional(os.getenv("UPPER_PRICE"))
-    INVESTMENT_AMOUNT: float = _safe_float(os.getenv("INVESTMENT_AMOUNT"), 100.0)
+    GRID_COUNT: int = _safe_int(os.getenv("GRID_COUNT"), 20)
+    LOWER_PRICE: float | None = _safe_float_optional(os.getenv("LOWER_PRICE", "10000.0"))
+    UPPER_PRICE: float | None = _safe_float_optional(os.getenv("UPPER_PRICE", "20000.0"))
+    INVESTMENT_AMOUNT: float = _safe_float(os.getenv("INVESTMENT_AMOUNT"), 9700.0)
 
-    # リスク管理
-    STOP_LOSS_PERCENTAGE: float = _safe_float(os.getenv("STOP_LOSS_PERCENTAGE"), 5.0)
-    MAX_DRAWDOWN_PCT: float = _safe_float(os.getenv("MAX_DRAWDOWN_PCT"), 10.0)
-    MAX_POSITIONS: int = _safe_int(os.getenv("MAX_POSITIONS"), 5)
+    # リスク管理 (0 = 無効)
+    STOP_LOSS_PERCENTAGE: float = _safe_float(os.getenv("STOP_LOSS_PERCENTAGE"), 10.0)
+    MAX_DRAWDOWN_PCT: float = _safe_float(os.getenv("MAX_DRAWDOWN_PCT"), 20.0)  # 0 = disabled
+    MAX_POSITIONS: int = _safe_int(os.getenv("MAX_POSITIONS"), 20)
 
     # ボット動作設定
-    CHECK_INTERVAL: int = _safe_int(os.getenv("CHECK_INTERVAL"), 10)
+    CHECK_INTERVAL: int = _safe_int(os.getenv("CHECK_INTERVAL"), 5)
     STATUS_DISPLAY_INTERVAL: int = _safe_int(os.getenv("STATUS_DISPLAY_INTERVAL"), 60)
     MAX_CONSECUTIVE_ERRORS: int = _safe_int(os.getenv("MAX_CONSECUTIVE_ERRORS"), 5)
     GRID_RANGE_FACTOR: float = _safe_float(os.getenv("GRID_RANGE_FACTOR"), 0.15)
+    GRID_RANGE_FACTOR_MIN: float = _safe_float(os.getenv("GRID_RANGE_FACTOR_MIN"), 0.01)
+    GRID_RANGE_FACTOR_MAX: float = _safe_float(os.getenv("GRID_RANGE_FACTOR_MAX"), 0.10)
+    VOLATILITY_LOOKBACK: int = _safe_int(os.getenv("VOLATILITY_LOOKBACK"), 20)
+    VOLATILITY_GRID_ADJUSTMENT: bool = (
+        os.getenv("VOLATILITY_GRID_ADJUSTMENT", "true").lower() == "true"
+    )
     TRADING_FEE_RATE: float = _safe_float(os.getenv("TRADING_FEE_RATE"), 0.001)
     CLOSE_ON_STOP: bool = os.getenv("CLOSE_ON_STOP", "true").lower() == "true"
     PERSIST_INTERVAL: int = _safe_int(os.getenv("PERSIST_INTERVAL"), 60)
-    USE_USER_STREAM: bool = os.getenv("USE_USER_STREAM", "true").lower() == "true"
+    USE_USER_STREAM: str = os.getenv("USE_USER_STREAM", "auto").lower()
 
     @classmethod
     def validate(cls) -> list[str]:
@@ -96,18 +102,22 @@ class Settings:
         is_jpy = symbol.endswith("JPY")
         amount_threshold = 750000 if is_jpy else 5000  # 750k JPY ~ 5000 USDT
 
-        if cls.INVESTMENT_AMOUNT > 0 and not cls.USE_TESTNET and cls.INVESTMENT_AMOUNT > amount_threshold:
+        if (
+            cls.INVESTMENT_AMOUNT > 0
+            and not cls.USE_TESTNET
+            and cls.INVESTMENT_AMOUNT > amount_threshold
+        ):
             unit = "JPY" if is_jpy else "USDT"
             errors.append(
                 f"本番環境での INVESTMENT_AMOUNT が {int(amount_threshold)} {unit} を超えています。"
                 "少額から開始することを強く推奨します。"
             )
 
-        if cls.STOP_LOSS_PERCENTAGE <= 0 or cls.STOP_LOSS_PERCENTAGE > 100:
-            errors.append("STOP_LOSS_PERCENTAGE は 0-100 の範囲である必要があります")
+        if cls.STOP_LOSS_PERCENTAGE < 0 or cls.STOP_LOSS_PERCENTAGE > 100:
+            errors.append("STOP_LOSS_PERCENTAGE は 0-100 の範囲である必要です（0 = 無効）")
 
-        if cls.MAX_DRAWDOWN_PCT <= 0 or cls.MAX_DRAWDOWN_PCT > 100:
-            errors.append("MAX_DRAWDOWN_PCT は 0-100 の範囲である必要があります")
+        if cls.MAX_DRAWDOWN_PCT < 0 or cls.MAX_DRAWDOWN_PCT > 100:
+            errors.append("MAX_DRAWDOWN_PCT は 0-100 の範囲である必要があります（0 = 無効）")
 
         if cls.MAX_POSITIONS < 1:
             errors.append("MAX_POSITIONS は 1 以上である必要があります")

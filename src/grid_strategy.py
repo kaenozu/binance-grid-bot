@@ -119,9 +119,9 @@ class GridStrategy:
                 level=i,
                 buy_price=round(self.lower_price + spacing * i, precision),
                 sell_price=(
-                    round(self.lower_price + spacing * (i + 1), precision)
-                    if i < self.grid_count - 1
-                    else None
+                    round(self.upper_price, precision)
+                    if i == self.grid_count - 1
+                    else round(self.lower_price + spacing * (i + 1), precision)
                 ),
                 short_sell_price=(
                     round(self.lower_price + spacing * (i + 1), precision) if i > 0 else None
@@ -203,13 +203,9 @@ class GridStrategy:
     # ── アクティブグリッド ──────────────────────────────────────────
 
     def get_active_buy_grids(self) -> list[GridLevel]:
-        """買い注文を配置すべきグリッド（未ポジション、sell_priceあり、現在価格以下）"""
+        """買い注文を配置すべきグリッド（未ポジション、現在価格以下）"""
         return [
-            g
-            for g in self.grids
-            if g.buy_price <= self.current_price
-            and not g.position_filled
-            and g.sell_price is not None
+            g for g in self.grids if g.buy_price <= self.current_price and not g.position_filled
         ]
 
     def get_active_sell_grids(self) -> list[GridLevel]:

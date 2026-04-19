@@ -80,11 +80,16 @@ def close_open_positions(
         if available <= 0:
             break
         try:
-            qty_per_grid = strategy.get_order_quantity(
-                grid.buy_price, min_qty=min_qty, step_size=step_size
-            )
-            sell_qty = min(available, qty_per_grid)
+            # grid.filled_quantity が実際の購入数量なので、それを卖出
+            sell_qty = grid.filled_quantity if grid.filled_quantity else 0
+            if symbol_info:
+                # step_size に合わせて調整
+                step = float(symbol_info.get("step_size", 0))
+                if step > 0:
+                    sell_qty = (sell_qty // step) * step
+            sell_qty = min(available, sell_qty)
             if sell_qty <= 0:
+                logger.warning(f"グリッド {grid.level}: 売却数量0、スキップ")
                 continue
 
             result = client.place_order(

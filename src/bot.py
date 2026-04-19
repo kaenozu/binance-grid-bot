@@ -7,7 +7,7 @@ from pathlib import Path
 from config.settings import Settings
 from src import order_sync, persistence
 from src.api_weight import APIWeightTracker
-from src.binance_client import BinanceClient
+from src.binance_client import BinanceClient, BinanceAPIError
 from src.grid_strategy import GridStrategy
 from src.order_manager import OrderManager, OrderPlacementResult
 from src.portfolio import Portfolio
@@ -179,64 +179,7 @@ class GridBot:
     def _resolve_grid_count(
         self, investment_amount: float, lower_price: float, upper_price: float
     ) -> int:
-        """資金額に基づいて最適なグリッド数を完全自動計算
-
-        GRID_COUNT=0 → 資金から最大適正グリッド数を自動算出
-        GRID_COUNT>0 → その値を上限として、資金に合わせて減らす
-
-        最適化ルール:
-        1. 1グリッドの投資額 >= min_notional（取引所最低注文額）
-        2. 1往復利益 >= _min_cycle_profit（手数料を上回る実益）
-        3. 利益/グリッド数の効率が最大化される点を採用
-        """
-        min_profit = self._min_cycle_profit()
-
-        symbol_info = self.client.get_symbol_info(self.symbol)
-        min_notional = float(symbol_info.get("min_notional", 0) or 0) if symbol_info else 0
-        if min_notional <= 0:
-            # SOLJPY等、NOTIONALフィルターの銘柄向けフォールバック
-            min_notional = 100.0 if self.quote_asset == "JPY" else 10.0
-            logger.debug(f"min_notional取得不可、フォールバック: {min_notional} {self.quote_asset}")
-
-        # 上限の決定
-        if Settings.GRID_COUNT <= 0:
-            # 完全自動: min_notionalから理論上の最大を計算
-            max_by_notional = int(investment_amount / (min_notional * 1.5))  # 1.5x余裕
-            hard_cap = min(max_by_notional, 30)  # 30上限（API負荷対策）
-            start = max(hard_cap, 2)
-        else:
-            start = max(2, Settings.GRID_COUNT)
-
-        # 条件を満たす最大グリッド数を探す（上から順に）
-        best = 2
-        for candidate in range(start, 1, -1):
-            per_grid = investment_amount / candidate
-
-            if per_grid < min_notional:
-                continue
-
-            est = estimate_cycle_profit(
-                current_price=self.current_price,
-                lower_price=lower_price,
-                upper_price=upper_price,
-                grid_count=candidate,
-                investment_amount=investment_amount,
-                fee_rate=Settings.TRADING_FEE_RATE,
-            )
-            if est < min_profit:
-                continue
-
-            best = candidate
-            break
-
-        label = "自動" if Settings.GRID_COUNT <= 0 else f"上限{Settings.GRID_COUNT}"
-        logger.info(
-            f"グリッド数決定: {best} ({label}) "
-            f"資金={investment_amount:.2f} {self.quote_asset}, "
-            f"perGrid={investment_amount / best:.2f}, "
-            f"minNotional={min_notional}, minCycleProfit={min_profit:.2f}"
-        )
-        return best
+        return Settings.GRID_COUNT
 
     def _validate_price(self, price: float) -> bool:
         """異常価格（0, 負値, 極端な変動）を検知してスキップ
@@ -265,37 +208,9 @@ class GridBot:
     # ── 初期化ヘルパー ──────────────────────────────────────────────
 
     def _restore_state(self):
-        """永続化された状態を復元"""
-        grid_states = persistence.load_grid_states(self.symbol)
-        if grid_states:
-            for gs in grid_states:
-                level = gs["level"]
-                if level < len(self.strategy.grids):
-                    grid = self.strategy.grids[level]
-                    grid.position_filled = gs["position_filled"]
-                    grid.buy_order_id = gs["buy_order_id"]
-                    grid.sell_order_id = gs["sell_order_id"]
-            logger.info(f"グリッド状態を復元: {len(grid_states)} レベル")
-
-            filled_count = sum(1 for g in self.strategy.grids if g.position_filled)
-            self.risk_manager.current_positions = filled_count
-
-        portfolio_stats = persistence.load_portfolio_stats()
-        if portfolio_stats:
-            persistence.restore_stats_to(self.portfolio.stats, portfolio_stats)
-            # initial_balance は毎回現在のAPI残高で上書き（DBの古い値を無視）
-            self.portfolio.stats.initial_balance = self.portfolio.stats.current_balance
-            logger.info(
-                f"ポートフォリオ統計を復元: "
-                f"初期残高={self.portfolio.stats.initial_balance:.2f}, "
-                f"実現利益={self.portfolio.stats.realized_profit:+.4f}, "
-                f"取引={self.portfolio.stats.total_trades}件"
-            )
-
-        trade_records = persistence.load_trades(self.symbol)
-        if trade_records:
-            self.portfolio.restore_trades(trade_records)
-            self._restore_open_position_quantities()
+        """永続化された状態を復元（スキップ）"""
+        logger.info("状態復元をスキップします")
+        pass
 
     def _restore_open_position_quantities(self) -> None:
         """復元済みの買い取引から未決済ポジションの数量を補完する"""
@@ -351,6 +266,12 @@ class GridBot:
             self.ws_client.start_user_stream()
 
         self._place_initial_orders()
+        
+        # 起動直後のステータス表示
+        display_status(
+            self.symbol, self.current_price, self.strategy, 
+            self.portfolio, self.risk_manager
+        )
 
         try:
             while self.is_running:
@@ -366,8 +287,14 @@ class GridBot:
 
     def _update_price(self):
         """現在価格を更新（停滞検知付き）"""
+        # JPYペアはBinance Japan限定でグローバルWSにストリームがないため
+        # 毎回REST APIで取得する
+        is_jpy_pair = self.quote_asset == "JPY"
         ws = self.ws_client
-        if ws and ws.current_price is not None:
+
+        if is_jpy_pair:
+            self.current_price = self.client.get_symbol_price(self.symbol)
+        elif ws and ws.current_price is not None:
             if ws.is_price_stale:
                 logger.warning(
                     f"価格更新停滞: {ws.seconds_since_last_price:.0f}秒。REST API で取得します"
@@ -490,6 +417,11 @@ class GridBot:
         """ポートフォリオのドローダウンが上限を超えたら停止する"""
         stats = self.portfolio.stats
         max_drawdown_pct_limit = getattr(Settings, "MAX_DRAWDOWN_PCT", 10.0)
+        
+        # 制限が0以下なら無効とする
+        if max_drawdown_pct_limit <= 0:
+            return False
+
         if stats.peak_balance <= 0:
             return False
         if stats.max_drawdown_pct < max_drawdown_pct_limit:

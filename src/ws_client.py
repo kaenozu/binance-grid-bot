@@ -11,6 +11,7 @@ import time
 from typing import Callable
 
 from config.settings import Settings
+from src import persistence
 from utils.logger import setup_logger
 
 logger = setup_logger("ws_client")
@@ -27,7 +28,8 @@ class BinanceWebSocketClient:
 
     def __init__(self, binance_client=None):
         self._running = False
-        self._user_stream_enabled = Settings.USE_USER_STREAM
+        self._user_stream_mode = str(Settings.USE_USER_STREAM).lower()
+        self._user_stream_enabled = str(Settings.USE_USER_STREAM).lower() != "false"
         self._price_thread: threading.Thread | None = None
         self._user_thread: threading.Thread | None = None
         self._listen_key_thread: threading.Thread | None = None
@@ -144,6 +146,15 @@ class BinanceWebSocketClient:
         if not self._user_stream_enabled:
             logger.info("ユーザーストリームは設定で無効化されています。listenKey は作成しません")
             return
+
+        if self._user_stream_mode == "auto":
+            try:
+                cached = persistence.load_bot_config("listenkey_disabled")
+                if cached == "true":
+                    logger.info("listenKey 非対応のためポーリング専用モードで動作")
+                    return
+            except Exception:
+                pass
 
         try:
             self._listen_key = self._binance_client.create_listen_key()
@@ -305,10 +316,14 @@ class BinanceWebSocketClient:
         logger.info("WebSocket ストリーム停止")
 
     def _disable_user_stream(self, reason: str) -> None:
-        """ユーザーストリームを無効化し、再試行を止める"""
         self._user_stream_enabled = False
         self._listen_key = None
-        logger.warning(f"{reason}。ユーザーストリームを無効化してポーリングにフォールバックします")
+        if self._user_stream_mode == "auto":
+            try:
+                persistence.save_bot_config("listenkey_disabled", "true")
+            except Exception:
+                pass
+        logger.info(f"{reason}。ポーリング専用モードに切り替えます")
 
     @staticmethod
     def _describe_listen_key_error(error: Exception) -> str:
