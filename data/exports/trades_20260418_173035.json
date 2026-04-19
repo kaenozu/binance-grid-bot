@@ -1,0 +1,13 @@
+[
+  {
+    "timestamp": "2026-04-18T16:52:02.409820",
+    "symbol": "SOLJPY",
+    "side": "SELL",
+    "price": 0.0,
+    "quantity": 0.348,
+    "order_id": 346315402,
+    "grid_level": 1,
+    "profit": 0.0,
+    "matched": false
+  }
+]

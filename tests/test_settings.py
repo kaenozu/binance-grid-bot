@@ -57,7 +57,7 @@ class TestSettingsValidation:
 
     def test_validate_catches_invalid_stop_loss(self):
         original = Settings.STOP_LOSS_PERCENTAGE
-        Settings.STOP_LOSS_PERCENTAGE = 0
+        Settings.STOP_LOSS_PERCENTAGE = -1  # Negative should be invalid
         try:
             errors = Settings.validate()
             assert any("STOP_LOSS_PERCENTAGE" in e for e in errors)
@@ -66,7 +66,7 @@ class TestSettingsValidation:
 
     def test_validate_catches_invalid_max_drawdown(self):
         original = Settings.MAX_DRAWDOWN_PCT
-        Settings.MAX_DRAWDOWN_PCT = 0
+        Settings.MAX_DRAWDOWN_PCT = -1  # Negative should be invalid
         try:
             errors = Settings.validate()
             assert any("MAX_DRAWDOWN_PCT" in e for e in errors)

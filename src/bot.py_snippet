@@ -1,0 +1,31 @@
+    def _restore_state(self) -> None:
+        """Restore saved state"""
+        try:
+            # グリッド状態の復元
+            grids = persistence.load_grid_states(self.symbol)
+            if grids:
+                self.strategy.grids = grids
+                logger.info(f"Grid state restored: {len(grids)} levels")
+
+            # ポートフォリオ統計の復元
+            stats_dict = persistence.load_portfolio_stats()
+            if stats_dict:
+                from src.portfolio import PortfolioStats
+                stats = PortfolioStats(**stats_dict)
+                self.portfolio.stats = stats
+                logger.info(
+                    f"Portfolio stats restored: initial={stats.initial_balance:.2f}, "
+                    f"profit={stats.total_realized_profit:+.4f}, "
+                    f"trades={stats.trade_count}"
+                )
+
+            # 取引履歴の復元
+            trades = persistence.load_trades(self.symbol)
+            if trades:
+                self.portfolio.trades = trades
+                open_pos = sum(1 for t in trades if not t.matched and t.side == "BUY")
+                for _ in range(open_pos):
+                    self.risk_manager.record_position_open()
+
+        except Exception as e:
+            logger.error(f"State restoration failed: {e}")

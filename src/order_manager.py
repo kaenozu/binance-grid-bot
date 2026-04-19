@@ -7,7 +7,7 @@
 
 from dataclasses import dataclass, field
 
-from src.binance_client import BinanceClient
+from src.binance_client import BinanceClient, BinanceAPIError
 from src.grid_strategy import GridStrategy
 from utils.logger import setup_logger
 from utils.precision import quantize_down, quantize_up
@@ -147,10 +147,6 @@ class OrderManager:
                 elif err:
                     errors.append(err)
 
-        # ── 上方向: SELL指値（価格より上、手持ちSOLを売る） ──
-        short_placed = self._place_short_sell_orders(symbol_info, errors)
-        placed_count += short_placed
-
         # ── 上方向: BUYBACK指値（ショートポジションあり） ──
         for grid in self.strategy.get_active_short_buyback_grids():
             qty = grid.short_filled_quantity
@@ -165,67 +161,6 @@ class OrderManager:
 
         logger.info(f"注文配置完了: {placed_count} 件, エラー: {len(errors)} 件")
         return OrderPlacementResult(placed=placed_count, errors=errors)
-
-    def _place_short_sell_orders(self, symbol_info: dict, errors: list[str]) -> int:
-        """価格より上のグリッドにSELL指値を配置（手持ちSOLを活用）
-
-        SOLの余剰分を複数レベルに分割してSELL指値を出す。
-        価格が上がったら約定 → 利益確定 → BUYBACKで買い戻す。
-        """
-        placed = 0
-        try:
-            balances = self.client.get_account_balance()
-            base_asset = symbol_info.get("base_asset", "")
-            available = float(balances.get(base_asset, {}).get("free", 0))
-        except Exception:
-            return 0
-
-        if available <= 0:
-            logger.debug(f"上方向SELL配置: {base_asset} 残高なし")
-            return 0
-
-        # 既存SELL注文でロック済みの数量を差し引く
-        sell_locked = sum(o.quantity for o in self._active_orders.values() if o.side == "SELL")
-        surplus = available - sell_locked
-        surplus = self._normalize_quantity(surplus, symbol_info)
-        if surplus <= 0:
-            return 0
-
-        # 上方向グリッドを取得
-        short_grids = self.strategy.get_active_short_sell_grids()
-        if not short_grids:
-            return 0
-
-        # 余剰SOLを各グリッドに均等分割
-        qty_per_grid = surplus / len(short_grids)
-        qty_per_grid = self._normalize_quantity(qty_per_grid, symbol_info)
-        if qty_per_grid <= 0:
-            # 全量を一番近いグリッドに
-            qty_per_grid = surplus
-
-        remaining = surplus
-        for grid in short_grids:
-            if remaining <= 0:
-                break
-            if grid.short_sell_price is None:
-                continue
-            qty = min(qty_per_grid, remaining)
-            qty = self._normalize_quantity(qty, symbol_info)
-            if qty <= 0:
-                continue
-            price = grid.short_sell_price
-            assert price is not None, "short_sell_price must not be None"
-            ok, err = self._try_place(grid.level, "SELL", price, qty, symbol_info=symbol_info)
-            if ok:
-                placed += 1
-                remaining -= qty
-            elif err:
-                errors.append(err)
-
-        if placed:
-            base_asset = symbol_info.get("base_asset", "")
-            logger.info(f"上方向SELL配置: {placed} 件 ({surplus:.6f} {base_asset}を分割)")
-        return placed
 
     def check_order_fills(self) -> list[FillEvent]:
         """約定済み注文をチェックし、新規約定があれば処理してクリーンアップ"""
@@ -320,6 +255,10 @@ class OrderManager:
         symbol_info: dict | None = None,
     ) -> dict | None:
         """共通注文配置ロジック"""
+        if price <= 0:
+            logger.error(f"不正な価格での注文試行: {price}")
+            return None
+
         if symbol_info is None:
             symbol_info = self.client.get_symbol_info(self.strategy.symbol)
         if not symbol_info:
@@ -335,8 +274,10 @@ class OrderManager:
                 symbol_info.get("min_notional", 0),
                 max_notional=per_grid_budget,
             )
+
         quantity = self._normalize_quantity(quantity, symbol_info)
         if quantity <= 0:
+            logger.warning(f"注文数量が0または最小単位未満です: grid={grid_level}, side={side}")
             return None
 
         adjusted_price = adjust_price(price, symbol_info["tick_size"], side=side)
@@ -437,7 +378,8 @@ class OrderManager:
         try:
             open_orders = self.client.get_open_orders(self.strategy.symbol)
         except Exception as e:
-            logger.error(f"オープン注文一括取得失敗: {e}")
+            # エラーは全て無視して空列表を返す（次ティックでリトライ）
+            logger.warning(f"openOrders取得をスキップ: {type(e).__name__}")
             return fills
 
         open_ids = {o["orderId"] for o in open_orders}
@@ -508,7 +450,9 @@ class OrderManager:
         self, order: dict, grid_level: int, side: str, price: float, quantity: float
     ) -> None:
         """注文を登録し、即約定なら戦略を更新"""
-        avg_price = float(order.get("avgPrice") or order["price"])
+        avg_price = float(order.get("avgPrice") or order.get("price", 0))
+        if avg_price <= 0:
+            avg_price = price  # フォールバックで注文価格を使用
         executed_qty = float(order.get("executedQty") or order["origQty"])
 
         grid = self.strategy.grids[grid_level]

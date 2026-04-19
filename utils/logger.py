@@ -80,14 +80,19 @@ def setup_logger(name: str = "grid_bot") -> logging.Logger:
     logger.addHandler(console_handler)
 
     in_pytest = os.environ.get("PYTEST_CURRENT_TEST") is not None
-    if not in_pytest:
-        log_dir = Path(__file__).parent.parent / "logs"
-        log_dir.mkdir(exist_ok=True)
+
+    log_dir = Path(__file__).parent.parent / "logs"
+    log_dir.mkdir(exist_ok=True)
+
+    if in_pytest:
+        log_file = log_dir / "test_output.log"
+    else:
         log_file = log_dir / "grid_bot.log"
-        file_handler = WindowsSafeRotatingFileHandler(
-            log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
-        )
-        file_handler.setFormatter(FileFormatter())
-        logger.addHandler(file_handler)
+
+    file_handler = WindowsSafeRotatingFileHandler(
+        log_file, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+    )
+    file_handler.setFormatter(FileFormatter())
+    logger.addHandler(file_handler)
 
     return logger

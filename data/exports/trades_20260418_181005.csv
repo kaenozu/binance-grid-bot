@@ -1,0 +1,2 @@
+timestamp,symbol,side,price,quantity,order_id,grid_level,profit,matched
+2026-04-18T16:52:02.409820,SOLJPY,SELL,0.0,0.348,346315402,1,0.0,False

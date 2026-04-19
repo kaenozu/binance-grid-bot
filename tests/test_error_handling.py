@@ -35,6 +35,8 @@ def _make_bot():
     bot._close_open_positions = MagicMock()
     bot._persist_state = MagicMock()
     bot._handle_grid_shift = MagicMock()
+    bot._price_history = [2300.0]
+    bot._last_dynamic_factor = 0.15
     return bot
 
 

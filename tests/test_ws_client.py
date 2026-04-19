@@ -96,7 +96,7 @@ class TestBinanceWebSocketClient:
 
         assert ws._user_stream_enabled is False
         assert started == []
-        warning_messages = [call.args[0] for call in mock_logger.warning.call_args_list]
+        warning_messages = [call.args[0] for call in mock_logger.info.call_args_list]
         assert any("status=410" in message for message in warning_messages)
         assert any("endpoint=/api/v3/userDataStream" in message for message in warning_messages)
 

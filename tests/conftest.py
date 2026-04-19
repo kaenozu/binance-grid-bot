@@ -1,6 +1,13 @@
 """テスト共通設定・フィクスチャ"""
 
+import sys
+from pathlib import Path
 from unittest.mock import MagicMock, patch
+
+# プロジェクトルートを sys.path に追加
+ROOT = Path(__file__).parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import pytest
 

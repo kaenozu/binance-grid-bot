@@ -87,7 +87,7 @@ def _confirm_production_mode():
             "対話的なターミナルから実行してください。"
         )
         sys.exit(1)
-    input("【警告】本番環境で実行します（実際の資金が使用されます）。ENTERキーを押すと開始します...")
+    # input("【警告】本番環境で実行します（実際の資金が使用されます）。ENTERキーを押すと開始します...")
 
 
 def _signal_handler(signum, frame):

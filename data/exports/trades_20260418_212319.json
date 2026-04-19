@@ -1,0 +1,35 @@
+[
+  {
+    "timestamp": "2026-04-18T18:55:18.680578",
+    "symbol": "SOLJPY",
+    "side": "SELL",
+    "price": 0.0,
+    "quantity": 0.086,
+    "order_id": 346354961,
+    "grid_level": 4,
+    "profit": 0.0,
+    "matched": true
+  },
+  {
+    "timestamp": "2026-04-18T18:59:19.782505",
+    "symbol": "SOLJPY",
+    "side": "BUY",
+    "price": 13921.0,
+    "quantity": 0.087,
+    "order_id": 346355641,
+    "grid_level": 4,
+    "profit": -1212.338127,
+    "matched": true
+  },
+  {
+    "timestamp": "2026-04-18T19:32:21.546144",
+    "symbol": "SOLJPY",
+    "side": "SELL",
+    "price": 0.0,
+    "quantity": 0.086,
+    "order_id": 346368878,
+    "grid_level": 4,
+    "profit": 0.0,
+    "matched": false
+  }
+]

@@ -91,22 +91,31 @@ def _match_order_to_grid(price: float, strategy, side: str) -> int | None:
     best_diff = float("inf")
 
     grid_spacing = strategy.grid_spacing
-    tolerance = grid_spacing * 0.5
+    # 許容誤差をグリッド間隔の20%に制限（誤マッチング防止）
+    tolerance = grid_spacing * 0.2
 
     for grid in strategy.grids:
         if side == "BUY":
-            if grid.position_filled:
+            # 通常の買い（ポジションなし）またはショートの買い戻し（ショートポジションあり）
+            if grid.position_filled and not grid.short_position_filled:
                 continue
             diff = abs(grid.buy_price - price)
         elif side == "SELL":
-            if not grid.position_filled:
+            # 通常の売り（ポジションあり）またはショートの新規売り（ポジションなし）
+            if not grid.position_filled and not grid.short_sell_price:
                 continue
+            
+            # 通常の売り指値との比較
             if grid.sell_price is not None:
                 diff = abs(grid.sell_price - price)
+            # ショートの売り指値との比較（上方向グリッド）
+            elif grid.short_sell_price is not None:
+                diff = abs(grid.short_sell_price - price)
             else:
                 continue
         else:
             continue
+
         if diff < best_diff:
             best_diff = diff
             best_level = grid.level

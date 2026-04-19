@@ -128,6 +128,8 @@ class Portfolio:
             raise RuntimeError(f"残高の取得に失败了（{max_retries}回リトライ後）")
 
         self.stats.initial_balance = self.stats.current_balance
+        if self.stats.peak_balance <= 0:
+            self.stats.peak_balance = self.stats.current_balance
 
         logger.info(
             f"ポートフォリオ初期化: 初期残高={self.stats.initial_balance:.2f} {quote_asset}"
@@ -140,23 +142,33 @@ class Portfolio:
     # ── 残高 ─────────────────────────────────────────────────────────
 
     def _update_balance(self) -> bool:
-        """残高を更新。失敗時はFalseを返す"""
+        """総資産残高を更新（引用通貨 + ベース通貨の時価評価）"""
         try:
             balances = self.client.get_account_balance()
-            if self.quote_asset in balances:
-                info = balances[self.quote_asset]
-                new_balance = info["free"] + info["locked"]
-                if new_balance >= 0:
-                    self.stats.current_balance = new_balance
-                    return True
-                else:
-                    logger.warning(f"異常な残高値を受信: {new_balance}。更新をスキップします。")
-                    return False
-            else:
-                logger.warning(f"残高情報に {self.quote_asset} が含まれていません")
-                return False
+            
+            # 1. 引用通貨 (Quote Asset, e.g. JPY) の評価
+            quote_bal = balances.get(self.quote_asset, {"free": 0.0, "locked": 0.0})
+            total_valuation = quote_bal["free"] + quote_bal["locked"]
+
+            # 2. ベース通貨 (Base Asset, e.g. SOL) の評価
+            # シンボル情報から正確なベース通貨名を取得（既存の文字列置換より安全）
+            symbol_info = self.client.get_symbol_info(self.symbol)
+            base_asset = symbol_info.get("base_asset") if symbol_info else self.symbol.replace(self.quote_asset, "")
+
+            if base_asset and base_asset in balances and self._current_price > 0:
+                base_bal = balances[base_asset]
+                base_qty = base_bal["free"] + base_bal["locked"]
+                total_valuation += base_qty * self._current_price
+            
+            if total_valuation > 0:
+                self.stats.current_balance = total_valuation
+                return True
+            
+            logger.warning(f"残高が0または取得不能です: {total_valuation}")
+            return False
+
         except Exception as e:
-            logger.error(f"残高取得失敗: {e}")
+            logger.error(f"残高更新失敗: {e}")
             return False
 
     # ── トレード記録 ─────────────────────────────────────────────────
@@ -216,6 +228,9 @@ class Portfolio:
                 result = self._settle_buyback(trade, grid_level)
                 if result is not None:
                     profit, matched_order_id = result
+                    # 安全策: BUY開始注文なら利益を0にする
+                    if trade.side == "BUY" and not matched_order_id:
+                        profit = 0.0
                     self._update_periodic_profit(profit, trade.timestamp)
 
         try:
@@ -441,7 +456,7 @@ class Portfolio:
             if total_equity > self.stats.peak_balance:
                 self.stats.peak_balance = total_equity
 
-            # 最大ドローダウン計算（絶対額と率を同期）
+            # 最大ドローダウン計算
             if self.stats.peak_balance > 0:
                 dd_abs = self.stats.peak_balance - total_equity
                 if dd_abs > self.stats.max_drawdown:

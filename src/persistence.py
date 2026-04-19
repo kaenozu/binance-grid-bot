@@ -151,6 +151,12 @@ def _create_tables(conn: sqlite3.Connection):
                 yearly_profit TEXT DEFAULT '{}'
             )
         """)
+    conn.execute("""
+            CREATE TABLE IF NOT EXISTS bot_config (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
     conn.commit()
 
 
@@ -370,3 +376,24 @@ def restore_stats_to(stats_obj, data: dict):
     for field in _get_stats_fields():
         if field in data:
             setattr(stats_obj, field, data[field])
+
+
+def save_bot_config(key: str, value: str):
+    with _db_lock:
+        conn = _get_connection()
+        with conn:
+            conn.execute(
+                "INSERT OR REPLACE INTO bot_config (key, value) VALUES (?, ?)",
+                (key, value),
+            )
+
+
+def load_bot_config(key: str) -> str | None:
+    with _db_lock:
+        if not DB_PATH.exists():
+            return None
+        conn = _get_connection()
+        row = conn.execute(
+            "SELECT value FROM bot_config WHERE key = ?", (key,)
+        ).fetchone()
+    return row["value"] if row else None

@@ -119,6 +119,7 @@ class BinanceClient:
             self._weight_tracker.wait_if_needed()
 
         attempt = 0
+        _401_recovery_done = False
         while True:
             attempt += 1
             if signed:
@@ -166,10 +167,7 @@ class BinanceClient:
                 continue
 
             if response.status_code == 410 and endpoint.endswith("/userDataStream"):
-                body = (response.text or "").strip() or "<empty>"
-                logger.warning(
-                    f"listenKey endpoint が 410 を返しました。endpoint={endpoint}, body={body}"
-                )
+                logger.warning(f"listenKey endpoint が 410 を返しました。endpoint={endpoint}")
                 raise BinanceAPIError(
                     "listenKey endpoint unavailable (410)",
                     status_code=410,
@@ -184,12 +182,37 @@ class BinanceClient:
                 time.sleep(self._backoff(attempt))
                 continue
 
+            if signed and response.status_code == 401 and not _401_recovery_done:
+                _401_recovery_done = True
+                # ネットワーク復帰後の401: timestampが失效している可能性が高い
+                # 1秒待って全新的timestampでリトライ
+                logger.warning(f"401: ネットワーク復帰後の可能性があります endpoint={endpoint}")
+                time.sleep(1)
+                # timestampを再计算するためにリセット
+                self._time_offset_ms = 0
+                # リトライ
+                _401_recovery_done = False
+                continue
+
+            # 401が2回連続で发生した場合（一時的にIP禁止の可能性）
+            if signed and response.status_code == 401 and _401_recovery_done:
+                # openOrdersなら空列表を返して続行
+                if "openOrders" in endpoint:
+                    logger.warning("401 再発生: 一時的に禁止中の可能性、スキップ")
+                    return []
+                logger.error(f"401認証エラー連続: endpoint={endpoint}")
+                raise BinanceAPIError("401 authentication failed", status_code=401)
+
             # 4xx ── リトライしない（クライアントエラー）
+            body = response.text if response else ""
+            if not body:
+                logger.warning(
+                    f"空のレスポンス: status={response.status_code}, endpoint={endpoint}"
+                )
             try:
                 response.raise_for_status()
             except requests.exceptions.HTTPError as e:
-                body = e.response.text if e.response else ""
-                status = getattr(e.response, "status_code", 0)
+                status = response.status_code
                 safe_params = {
                     k: ("***MASKED***" if k == "signature" else v) for k, v in params.items()
                 }
@@ -239,6 +262,17 @@ class BinanceClient:
             logger.info(f"サーバー時刻を同期: offset={self._time_offset_ms}ms")
         except Exception as e:
             logger.warning(f"サーバー時刻同期失敗: {e}")
+
+    def _recover_from_auth_error(self) -> bool:
+        try:
+            logger.info("認証エラーリカバリ: サーバー時刻を再同期します")
+            self._sync_server_time()
+            self._check_time_offset()
+            logger.info("認証エラーリカバリ: サーバー時刻再同期完了")
+            return True
+        except Exception as e:
+            logger.warning(f"認証エラーリカバリ失敗: {e}")
+            return False
 
     @staticmethod
     def _is_timestamp_error(response: requests.Response) -> bool:
@@ -360,6 +394,19 @@ class BinanceClient:
         """現在の価格を取得"""
         data = self._make_request("GET", "/api/v3/ticker/price", {"symbol": symbol})
         return float(data["price"])
+
+    def get_klines(self, symbol: str, interval: str = "1h", limit: int = 20) -> list[float]:
+        """直近のkline終値を取得（価格履歴の初期充填用）"""
+        params = {"symbol": symbol, "interval": interval, "limit": limit}
+        data = self._make_request("GET", "/api/v3/klines", params)
+        closes: list[float] = []
+        for candle in data:
+            if isinstance(candle, list) and len(candle) >= 5:
+                try:
+                    closes.append(float(candle[4]))
+                except (ValueError, TypeError):
+                    continue
+        return closes
 
     def invalidate_symbol_cache(self, symbol: str) -> None:
         """シンボル情報キャッシュを破棄する"""
